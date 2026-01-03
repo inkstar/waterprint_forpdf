@@ -786,13 +786,13 @@ class AdvancedWatermarkApp:
     def set_pos_top_left(self):
         if self.selected_wm_idx >= 0:
             wm = self.watermarks[self.selected_wm_idx]
-        margin = 50
+            margin = 50
             # 计算大致宽度（如果是图片）
             w = wm['img_obj'].width * wm['scale'] if wm['type'] == 'image' else 100
             h = wm['img_obj'].height * wm['scale'] if wm['type'] == 'image' else 30
             wm['x'] = margin + w/2
             wm['y'] = self.vis_pdf_h - margin - h/2
-        self.update_preview()
+            self.update_preview()
 
     def toggle_range_entry(self, e=None):
         self.entry_range.config(state="normal" if self.range_mode_var.get() == "指定页面" else "disabled")
