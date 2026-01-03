@@ -84,6 +84,7 @@ class AdvancedWatermarkApp:
         self.preview_zoom_var = tk.DoubleVar(value=1.0)
         self.range_mode_var = tk.StringVar(value="全部页面")
         self.custom_range_var = tk.StringVar(value="")
+        self.output_dir_var = tk.StringVar(value="原文件目录")
         self.status_var = tk.StringVar(value="准备就绪")
         self.page_info_var = tk.StringVar(value="0 / 0")
 
@@ -148,6 +149,13 @@ class AdvancedWatermarkApp:
         cb_range.bind("<<ComboboxSelected>>", self.toggle_range_entry)
         self.entry_range = tk.Entry(lf_range, textvariable=self.custom_range_var, state="disabled")
         self.entry_range.pack(fill="x", pady=2)
+
+        # 6. 输出设置
+        lf_output = tk.LabelFrame(ctrl_frame, text="6. 输出设置", padx=10, pady=5)
+        lf_output.pack(fill="x", padx=10, pady=5)
+        tk.Button(lf_output, text="选择输出目录", command=self.select_output_dir).pack(fill="x", pady=2)
+        tk.Label(lf_output, textvariable=self.output_dir_var, wraplength=250, fg="gray", font=("Arial", 8)).pack()
+        tk.Button(lf_output, text="恢复默认 (原目录)", command=self.reset_output_dir, font=("Arial", 7), fg="blue", bd=0, cursor="hand2").pack(anchor="e")
 
         # 执行区域
         self.progress = ttk.Progressbar(ctrl_frame, orient="horizontal", mode="determinate")
@@ -261,6 +269,14 @@ class AdvancedWatermarkApp:
             self.lbl_coords.config(text=f"视觉坐标(Points): ({int(self.wm_x)}, {int(self.wm_y)})")
 
     # --- 后续通用方法 (复用之前的逻辑) ---
+    def select_output_dir(self):
+        d = filedialog.askdirectory()
+        if d:
+            self.output_dir_var.set(d)
+
+    def reset_output_dir(self):
+        self.output_dir_var.set("原文件目录")
+
     def select_pdfs(self):
         files = filedialog.askopenfilenames(filetypes=[("PDF Files", "*.pdf")])
         if files:
@@ -334,6 +350,7 @@ class AdvancedWatermarkApp:
                     self.angle_var.set(data.get("angle", 0))
                     self.range_mode_var.set(data.get("range_mode", "全部页面"))
                     self.custom_range_var.set(data.get("custom_range", ""))
+                    self.output_dir_var.set(data.get("output_dir", "原文件目录"))
             except: pass
 
     def save_config(self):
@@ -343,7 +360,8 @@ class AdvancedWatermarkApp:
             "opacity": self.opacity_var.get(),
             "angle": self.angle_var.get(),
             "range_mode": self.range_mode_var.get(),
-            "custom_range": self.custom_range_var.get()
+            "custom_range": self.custom_range_var.get(),
+            "output_dir": self.output_dir_var.get()
         }
         try:
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
@@ -374,6 +392,7 @@ class AdvancedWatermarkApp:
         wm_data = img_byte_arr.getvalue()
 
         mode = self.range_mode_var.get()
+        output_dir = self.output_dir_var.get()
         custom = set()
         if mode == "指定页面":
             try:
@@ -399,7 +418,14 @@ class AdvancedWatermarkApp:
                         rect_x0 = self.wm_x - pw/2
                         rect_y0 = (self.vis_pdf_h - self.wm_y) - ph/2
                         page.insert_image(fitz.Rect(rect_x0, rect_y0, rect_x0 + pw, rect_y0 + ph), stream=wm_data)
-                doc.save(os.path.splitext(path)[0] + "_marked.pdf")
+                
+                # 计算保存路径
+                if output_dir == "原文件目录":
+                    save_path = os.path.splitext(path)[0] + "_marked.pdf"
+                else:
+                    save_path = os.path.join(output_dir, os.path.basename(os.path.splitext(path)[0]) + "_marked.pdf")
+                
+                doc.save(save_path)
                 doc.close()
                 count += 1
             except Exception as e: print(f"失败: {e}")
