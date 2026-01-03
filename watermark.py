@@ -232,8 +232,8 @@ class AdvancedWatermarkApp:
 
         # 绑定事件
         self.canvas.tag_bind("watermark", "<Button-1>", self.on_drag_start)
-        self.canvas.tag_bind("watermark", "<B1-Motion>", self.on_drag_motion)
-        self.canvas.tag_bind("watermark", "<ButtonRelease-1>", self.on_drag_stop)
+        self.canvas.bind("<B1-Motion>", self.on_drag_motion)
+        self.canvas.bind("<ButtonRelease-1>", self.on_drag_stop)
         self._drag_data = {"x": 0, "y": 0}
 
     # --- 逻辑部分 (保持原有逻辑并优化坐标计算) ---
@@ -288,16 +288,19 @@ class AdvancedWatermarkApp:
         cx = self.canvas.canvasx(e.x)
         cy = self.canvas.canvasy(e.y)
         
-        # 查找被点击的水印
-        item = self.canvas.find_closest(cx, cy)
-        tags = self.canvas.gettags(item)
-        for t in tags:
-            if t.startswith("wm_"):
-                self.selected_wm_idx = int(t.split("_")[1])
-                self.wm_listbox.selection_clear(0, tk.END)
-                self.wm_listbox.selection_set(self.selected_wm_idx)
-                self.on_wm_select()
-                break
+        # 使用 find_withtag("current") 获取当前点击的水印
+        items = self.canvas.find_withtag("current")
+        if items:
+            tags = self.canvas.gettags(items[0])
+            for t in tags:
+                if t.startswith("wm_"):
+                    new_idx = int(t.split("_")[1])
+                    if new_idx != self.selected_wm_idx:
+                        self.selected_wm_idx = new_idx
+                        self.wm_listbox.selection_clear(0, tk.END)
+                        self.wm_listbox.selection_set(self.selected_wm_idx)
+                        self.on_wm_select() # 这会触发 update_preview
+                    break
         
         self._drag_data["x"] = cx
         self._drag_data["y"] = cy
@@ -308,10 +311,21 @@ class AdvancedWatermarkApp:
         cy = self.canvas.canvasy(e.y)
         dx, dy = cx - self._drag_data["x"], cy - self._drag_data["y"]
         
+        # 移动选中的水印和选择框
         tag = f"wm_{self.selected_wm_idx}"
         self.canvas.move(tag, dx, dy)
         self.canvas.move("selection_box", dx, dy)
-        self._drag_data["x"], self._drag_data["y"] = cx, cy
+        
+        # 实时更新位置数据，但不触发重绘 (重绘太慢)
+        wm = self.watermarks[self.selected_wm_idx]
+        c = self.canvas.coords(tag)
+        if c:
+            wm['x'] = c[0] / self.pt_to_canvas_scale
+            wm['y'] = self.vis_pdf_h - (c[1] / self.pt_to_canvas_scale)
+            self.lbl_coords.config(text=f"视觉坐标(Points): ({int(wm['x'])}, {int(wm['y'])})")
+        
+        self._drag_data["x"] = cx
+        self._drag_data["y"] = cy
 
     def on_drag_stop(self, e):
         if self.selected_wm_idx < 0: return
@@ -473,13 +487,21 @@ class AdvancedWatermarkApp:
                 self.update_wm_from_ui()
 
     def set_pos_center(self):
-        self.wm_x, self.wm_y = self.vis_pdf_w/2, self.vis_pdf_h/2; self.update_preview()
+        if self.selected_wm_idx >= 0:
+            wm = self.watermarks[self.selected_wm_idx]
+            wm['x'], wm['y'] = self.vis_pdf_w/2, self.vis_pdf_h/2
+            self.update_preview()
 
     def set_pos_top_left(self):
-        margin = 50
-        self.wm_x = margin + (self.current_wm_img.width*self.scale_var.get())/2
-        self.wm_y = self.vis_pdf_h - margin - (self.current_wm_img.height*self.scale_var.get())/2
-        self.update_preview()
+        if self.selected_wm_idx >= 0:
+            wm = self.watermarks[self.selected_wm_idx]
+            margin = 50
+            # 计算大致宽度（如果是图片）
+            w = wm['img_obj'].width * wm['scale'] if wm['type'] == 'image' else 100
+            h = wm['img_obj'].height * wm['scale'] if wm['type'] == 'image' else 30
+            wm['x'] = margin + w/2
+            wm['y'] = self.vis_pdf_h - margin - h/2
+            self.update_preview()
 
     def toggle_range_entry(self, e=None):
         self.entry_range.config(state="normal" if self.range_mode_var.get() == "指定页面" else "disabled")
