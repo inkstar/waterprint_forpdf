@@ -93,6 +93,7 @@ class AdvancedWatermarkApp:
         self.range_mode_var = tk.StringVar(value="全部页面")
         self.custom_range_var = tk.StringVar(value="")
         self.output_dir_var = tk.StringVar(value="原文件目录")
+        self.output_suffix_var = tk.StringVar(value="_marked")
         self.status_var = tk.StringVar(value="准备就绪")
         self.page_info_var = tk.StringVar(value="0 / 0")
 
@@ -203,6 +204,10 @@ class AdvancedWatermarkApp:
         # 6. 输出设置
         lf_output = tk.LabelFrame(ctrl_frame, text="6. 输出设置", padx=10, pady=5)
         lf_output.pack(fill="x", padx=10, pady=5)
+        
+        tk.Label(lf_output, text="文件名后缀 (如 _marked):").pack(anchor="w")
+        tk.Entry(lf_output, textvariable=self.output_suffix_var).pack(fill="x", pady=2)
+        
         tk.Button(lf_output, text="选择输出目录", command=self.select_output_dir).pack(fill="x", pady=2)
         tk.Label(lf_output, textvariable=self.output_dir_var, wraplength=250, fg="gray", font=("Arial", 8)).pack()
         tk.Button(lf_output, text="恢复默认 (原目录)", command=self.reset_output_dir, font=("Arial", 7), fg="blue", bd=0, cursor="hand2").pack(anchor="e")
@@ -215,7 +220,7 @@ class AdvancedWatermarkApp:
         tk.Label(ctrl_frame, textvariable=self.status_var, wraplength=280, fg="blue").pack(pady=5)
 
         # 页脚
-        tk.Label(ctrl_frame, text="design by 比目鱼\n微信：inkstar97\nv 1.1.3  2026.01.03", font=("Arial", 8), fg="#999999", pady=20).pack()
+        tk.Label(ctrl_frame, text="design by 比目鱼\n微信：inkstar97\nv 1.1.4  2026.01.03", font=("Arial", 8), fg="#999999", pady=20).pack()
 
         # 3. 右侧预览区域 (带双向滚动条)
         preview_container = tk.Frame(self.main_paned)
@@ -584,6 +589,7 @@ class AdvancedWatermarkApp:
                     self.range_mode_var.set(data.get("range_mode", "全部页面"))
                     self.custom_range_var.set(data.get("custom_range", ""))
                     self.output_dir_var.set(data.get("output_dir", "原文件目录"))
+                    self.output_suffix_var.set(data.get("output_suffix", "_marked"))
             except: pass
 
     def save_config(self):
@@ -594,7 +600,8 @@ class AdvancedWatermarkApp:
             "angle": self.angle_var.get(),
             "range_mode": self.range_mode_var.get(),
             "custom_range": self.custom_range_var.get(),
-            "output_dir": self.output_dir_var.get()
+            "output_dir": self.output_dir_var.get(),
+            "output_suffix": self.output_suffix_var.get()
         }
         try:
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
@@ -667,6 +674,7 @@ class AdvancedWatermarkApp:
 
         mode = self.range_mode_var.get()
         output_dir = self.output_dir_var.get()
+        suffix = self.output_suffix_var.get()
         custom = set()
         # ... (custom 范围逻辑保持不变)
         if mode == "指定页面":
@@ -707,10 +715,13 @@ class AdvancedWatermarkApp:
                                                fill_opacity=pwm['opacity'])
                 
                 # 计算保存路径
+                base_name = os.path.basename(os.path.splitext(path)[0])
+                final_name = base_name + suffix + ".pdf"
+                
                 if output_dir == "原文件目录":
-                    save_path = os.path.splitext(path)[0] + "_marked.pdf"
+                    save_path = os.path.join(os.path.dirname(path), final_name)
                 else:
-                    save_path = os.path.join(output_dir, os.path.basename(os.path.splitext(path)[0]) + "_marked.pdf")
+                    save_path = os.path.join(output_dir, final_name)
                 
                 doc.save(save_path)
                 doc.close()
