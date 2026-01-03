@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, ttk, colorchooser, font
 import os
 import sys
 import json
@@ -62,7 +62,7 @@ class ScrollableFrame(tk.Frame):
 class AdvancedWatermarkApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("可视化 PDF 水印工具 v 1.0.9")
+        self.root.title("可视化 PDF 水印工具 v 1.1.1")
         self.root.geometry("1200x900")
         self.root.minsize(800, 600)
         
@@ -80,6 +80,8 @@ class AdvancedWatermarkApp:
         
         # --- 变量 (当前选中的水印属性) ---
         self.wm_text_var = tk.StringVar(value="测试水印")
+        self.wm_color_var = tk.StringVar(value="#FF0000")
+        self.wm_font_var = tk.StringVar(value="Arial")
         self.watermark_path = tk.StringVar()
         self.scale_var = tk.DoubleVar(value=1.0)
         self.opacity_var = tk.DoubleVar(value=0.5)
@@ -144,6 +146,19 @@ class AdvancedWatermarkApp:
         self.entry_wm_text = tk.Entry(self.frame_text_edit, textvariable=self.wm_text_var)
         self.entry_wm_text.pack(fill="x")
         self.entry_wm_text.bind("<KeyRelease>", lambda e: self.update_wm_from_ui())
+        
+        # 字体和颜色选择
+        fc_frame = tk.Frame(self.frame_text_edit)
+        fc_frame.pack(fill="x", pady=5)
+        
+        tk.Label(fc_frame, text="字体:").pack(side="left")
+        self.available_fonts = sorted(font.families())
+        self.cb_font = ttk.Combobox(fc_frame, textvariable=self.wm_font_var, values=self.available_fonts, state="readonly", width=15)
+        self.cb_font.pack(side="left", padx=5)
+        self.cb_font.bind("<<ComboboxSelected>>", lambda e: self.update_wm_from_ui())
+        
+        self.btn_color = tk.Button(fc_frame, text="颜色", command=self.pick_color, width=5)
+        self.btn_color.pack(side="left", padx=5)
         
         # 图片水印特有控件
         self.frame_img_edit = tk.Frame(self.lf_edit)
@@ -258,12 +273,12 @@ class AdvancedWatermarkApp:
                 wm_scale = wm['scale']
                 wm_w = int(wm['img_obj'].width * wm_scale * self.pt_to_canvas_scale)
                 wm_h = int(wm['img_obj'].height * wm_scale * self.pt_to_canvas_scale)
-                
-                if wm_w > 0 and wm_h > 0:
+            
+            if wm_w > 0 and wm_h > 0:
                     wm_edit = wm['img_obj'].resize((wm_w, wm_h), Image.Resampling.LANCZOS).rotate(wm['angle'], expand=True)
                     alpha = wm['opacity']
-                    r, g, b, a = wm_edit.split()
-                    wm_edit.putalpha(ImageEnhance.Brightness(a).enhance(alpha))
+                r, g, b, a = wm_edit.split()
+                wm_edit.putalpha(ImageEnhance.Brightness(a).enhance(alpha))
                     tk_img = ImageTk.PhotoImage(wm_edit)
                     self.tk_wm_images.append(tk_img)
                     
@@ -274,8 +289,8 @@ class AdvancedWatermarkApp:
                 vx = wm['x'] * self.pt_to_canvas_scale
                 vy = (self.vis_pdf_h - wm['y']) * self.pt_to_canvas_scale
                 font_size = int(30 * wm['scale'] * self.pt_to_canvas_scale)
-                self.canvas.create_text(vx, vy, text=wm['content'], font=("Arial", font_size), 
-                                       fill=wm['color'], angle=wm['angle'], 
+                self.canvas.create_text(vx, vy, text=wm['content'], font=(wm.get('font', 'Arial'), font_size), 
+                                       fill=wm.get('color', '#FF0000'), angle=wm['angle'], 
                                        stipple="gray50" if wm['opacity'] < 0.8 else "", 
                                        tags=("watermark", tag))
             
@@ -390,6 +405,13 @@ class AdvancedWatermarkApp:
         self.vis_pdf_w, self.vis_pdf_h = (rect.height, rect.width) if rot % 180 == 90 else (rect.width, rect.height)
         self.update_preview()
 
+    def pick_color(self):
+        color = colorchooser.askcolor(initialcolor=self.wm_color_var.get())[1]
+        if color:
+            self.wm_color_var.set(color)
+            self.btn_color.config(bg=color)
+            self.update_wm_from_ui()
+
     def add_image_watermark(self):
         f = filedialog.askopenfilename(filetypes=[("Images", "*.png *.jpg *.jpeg")])
         if f:
@@ -412,12 +434,13 @@ class AdvancedWatermarkApp:
         wm = {
             "type": "text",
             "content": "测试水印",
-            "scale": 1.0, # 这里对应字号缩放
+            "scale": 1.0, 
             "opacity": 0.5,
             "angle": 0,
             "x": self.vis_pdf_w / 2 if self.vis_pdf_w > 0 else 100,
             "y": self.vis_pdf_h / 2 if self.vis_pdf_h > 0 else 100,
-            "color": "#FF0000"
+            "color": "#FF0000",
+            "font": "Arial"
         }
         self.watermarks.append(wm)
         self.refresh_wm_list()
@@ -454,6 +477,9 @@ class AdvancedWatermarkApp:
             self.frame_img_edit.pack(fill="x", before=self.lf_edit.winfo_children()[2])
         else:
             self.wm_text_var.set(wm['content'])
+            self.wm_color_var.set(wm.get('color', '#FF0000'))
+            self.wm_font_var.set(wm.get('font', 'Arial'))
+            self.btn_color.config(bg=self.wm_color_var.get())
             self.frame_img_edit.pack_forget()
             self.frame_text_edit.pack(fill="x", before=self.lf_edit.winfo_children()[2])
         
@@ -467,6 +493,8 @@ class AdvancedWatermarkApp:
         wm['angle'] = self.angle_var.get()
         if wm['type'] == 'text':
             wm['content'] = self.wm_text_var.get()
+            wm['color'] = self.wm_color_var.get()
+            wm['font'] = self.wm_font_var.get()
         
         # 更新列表显示名
         name = f"图: {os.path.basename(wm['path'])}" if wm['type'] == 'image' else f"文: {wm['content']}"
@@ -495,13 +523,13 @@ class AdvancedWatermarkApp:
     def set_pos_top_left(self):
         if self.selected_wm_idx >= 0:
             wm = self.watermarks[self.selected_wm_idx]
-            margin = 50
+        margin = 50
             # 计算大致宽度（如果是图片）
             w = wm['img_obj'].width * wm['scale'] if wm['type'] == 'image' else 100
             h = wm['img_obj'].height * wm['scale'] if wm['type'] == 'image' else 30
             wm['x'] = margin + w/2
             wm['y'] = self.vis_pdf_h - margin - h/2
-            self.update_preview()
+        self.update_preview()
 
     def toggle_range_entry(self, e=None):
         self.entry_range.config(state="normal" if self.range_mode_var.get() == "指定页面" else "disabled")
@@ -551,6 +579,18 @@ class AdvancedWatermarkApp:
         hex_color = hex_color.lstrip('#')
         return tuple(int(hex_color[i:i+2], 16)/255.0 for i in (0, 2, 4))
 
+    def get_pdf_font_name(self, font_family):
+        # 简单映射一些常用字体到 PDF 标准字体
+        mapping = {
+            "Arial": "helv",
+            "Helvetica": "helv",
+            "Times New Roman": "tirom",
+            "Courier New": "cour",
+            "Verdana": "helv",
+            "Georgia": "tirom"
+        }
+        return mapping.get(font_family, "helv")
+
     def process_files(self):
         # 预编译所有水印数据
         processed_wms = []
@@ -559,12 +599,12 @@ class AdvancedWatermarkApp:
                 # 图片水印预处理
                 wm_pil = wm['img_obj'].copy()
                 ws, wa, wo = wm['scale'], wm['angle'], wm['opacity']
-                w, h = int(wm_pil.width * ws), int(wm_pil.height * ws)
-                wm_pil = wm_pil.resize((w, h), Image.Resampling.LANCZOS).rotate(wa, expand=True)
-                r, g, b, a = wm_pil.split()
-                wm_pil.putalpha(ImageEnhance.Brightness(a).enhance(wo))
-                img_byte_arr = BytesIO()
-                wm_pil.save(img_byte_arr, format='PNG')
+        w, h = int(wm_pil.width * ws), int(wm_pil.height * ws)
+        wm_pil = wm_pil.resize((w, h), Image.Resampling.LANCZOS).rotate(wa, expand=True)
+        r, g, b, a = wm_pil.split()
+        wm_pil.putalpha(ImageEnhance.Brightness(a).enhance(wo))
+        img_byte_arr = BytesIO()
+        wm_pil.save(img_byte_arr, format='PNG')
                 processed_wms.append({
                     "type": "image",
                     "data": img_byte_arr.getvalue(),
@@ -581,7 +621,8 @@ class AdvancedWatermarkApp:
                     "size": 30 * wm['scale'],
                     "opacity": wm['opacity'],
                     "angle": wm['angle'],
-                    "color": self.hex_to_rgb(wm['color']),
+                    "color": self.hex_to_rgb(wm.get('color', '#FF0000')),
+                    "font": self.get_pdf_font_name(wm.get('font', 'Arial')),
                     "x": wm['x'],
                     "y": wm['y']
                 })
@@ -623,6 +664,7 @@ class AdvancedWatermarkApp:
                                                pwm['content'], 
                                                fontsize=pwm['size'], 
                                                color=pwm['color'], 
+                                               fontname=pwm['font'],
                                                rotate=pwm['angle'],
                                                fill_opacity=pwm['opacity'])
                 
