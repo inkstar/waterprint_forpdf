@@ -263,7 +263,7 @@ class AdvancedWatermarkApp:
         link_lbl.pack(pady=5)
         link_lbl.bind("<Button-1>", self.open_feedback)
         
-        tk.Label(footer_frame, text="v 1.1.7  2026.01.03", font=("Arial", 7), fg="#cccccc").pack()
+        tk.Label(footer_frame, text="v 1.1.8  2026.01.03", font=("Arial", 7), fg="#cccccc").pack()
 
         # 3. 右侧预览区域 (带双向滚动条)
         preview_container = tk.Frame(self.main_paned)
@@ -791,5 +791,12 @@ class AdvancedWatermarkApp:
         messagebox.showinfo("完成", f"成功处理 {count} 个文件")
 
 if __name__ == "__main__":
+    # --- Windows 高分屏 (DPI) 适配 ---
+    try:
+        from ctypes import windll
+        windll.shcore.SetProcessDpiAwareness(1)
+    except:
+        pass
+        
     root = tk.Tk(); app = AdvancedWatermarkApp(root)
     root.mainloop()
