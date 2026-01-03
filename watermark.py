@@ -83,13 +83,17 @@ class AdvancedWatermarkApp:
         self.pt_to_canvas_scale = 1.0    
         
         # 多水印支持
-        self.watermarks = [] # 存储字典：{type, content, path, scale, opacity, angle, x, y, font_size, color}
+        self.watermarks = [] # 存储字典：{..., grid_mode, grid_gap_x, grid_gap_y}
         self.selected_wm_idx = -1
         
         # --- 变量 (当前选中的水印属性) ---
         self.wm_text_var = tk.StringVar(value="测试水印")
         self.wm_color_var = tk.StringVar(value="#FF0000")
         self.wm_font_var = tk.StringVar(value="Arial")
+        self.grid_mode_var = tk.BooleanVar(value=False)
+        self.grid_gap_x_var = tk.DoubleVar(value=100)
+        self.grid_gap_y_var = tk.DoubleVar(value=100)
+        
         self.watermark_path = tk.StringVar()
         self.scale_var = tk.DoubleVar(value=1.0)
         self.opacity_var = tk.DoubleVar(value=0.5)
@@ -173,6 +177,19 @@ class AdvancedWatermarkApp:
         self.lbl_pdf_info = tk.Label(lf_files, text="未加载", fg="gray", wraplength=300)
         self.lbl_pdf_info.pack()
 
+        # 模板管理区域
+        lf_templates = tk.LabelFrame(ctrl_frame, text="水印模板 (Presets)", padx=10, pady=5)
+        lf_templates.pack(fill="x", padx=10, pady=5)
+        
+        self.cb_templates = ttk.Combobox(lf_templates, state="readonly")
+        self.cb_templates.pack(fill="x", pady=2)
+        
+        btn_temp_frame = tk.Frame(lf_templates)
+        btn_temp_frame.pack(fill="x")
+        tk.Button(btn_temp_frame, text="保存为模板", command=self.save_template, font=("Arial", 8)).pack(side="left", expand=True)
+        tk.Button(btn_temp_frame, text="加载模板", command=self.load_template, font=("Arial", 8)).pack(side="left", expand=True)
+        tk.Button(btn_temp_frame, text="删除模板", command=self.delete_template, font=("Arial", 8), fg="red").pack(side="left", expand=True)
+
         # 水印管理区域
         lf_wm_list = tk.LabelFrame(ctrl_frame, text="2. 水印列表", padx=10, pady=5)
         lf_wm_list.pack(fill="x", padx=10, pady=5)
@@ -219,6 +236,14 @@ class AdvancedWatermarkApp:
         self.create_modern_scale(self.lf_edit, "水印大小/字号:", self.scale_var, 0.01, 3.0).pack(fill="x", pady=5)
         self.create_modern_scale(self.lf_edit, "透明度:", self.opacity_var, 0.1, 1.0).pack(fill="x", pady=5)
         self.create_modern_scale(self.lf_edit, "旋转角度:", self.angle_var, 0, 360, is_int=True).pack(fill="x", pady=5)
+
+        # 铺满设置 (阵列模式)
+        self.frame_grid_edit = tk.LabelFrame(self.lf_edit, text="阵列铺满设置", padx=5, pady=5)
+        self.frame_grid_edit.pack(fill="x", pady=5)
+        
+        tk.Checkbutton(self.frame_grid_edit, text="开启全屏铺满", variable=self.grid_mode_var, command=self.update_wm_from_ui).pack(anchor="w")
+        self.create_modern_scale(self.frame_grid_edit, "横向间距:", self.grid_gap_x_var, 50, 500, is_int=True).pack(fill="x")
+        self.create_modern_scale(self.frame_grid_edit, "纵向间距:", self.grid_gap_y_var, 50, 500, is_int=True).pack(fill="x")
 
         # 位置控制
         lf_pos = tk.LabelFrame(ctrl_frame, text="4. 位置控制", padx=10, pady=5)
@@ -269,7 +294,7 @@ class AdvancedWatermarkApp:
         link_lbl.pack(pady=5)
         link_lbl.bind("<Button-1>", self.open_feedback)
         
-        tk.Label(footer_frame, text="v 1.1.9  2026.01.03", font=("Arial", 7), fg="#cccccc").pack()
+        tk.Label(footer_frame, text="v 1.2.0  2026.01.03", font=("Arial", 7), fg="#cccccc").pack()
 
         # 3. 右侧预览区域 (带双向滚动条)
         preview_container = tk.Frame(self.main_paned)
@@ -337,6 +362,21 @@ class AdvancedWatermarkApp:
 
         for i, wm in enumerate(self.watermarks):
             tag = f"wm_{i}"
+            
+            # 计算绘制位置 (阵列模式或单点模式)
+            positions = []
+            if wm.get('grid_mode'):
+                # 阵列模式：铺满全屏
+                gap_x = wm.get('grid_gap_x', 150)
+                gap_y = wm.get('grid_gap_y', 150)
+                # 从 -gap 开始，确保边缘也被覆盖
+                for cur_x in range(0, int(self.vis_pdf_w + gap_x), int(gap_x)):
+                    for cur_y in range(0, int(self.vis_pdf_h + gap_y), int(gap_y)):
+                        positions.append((cur_x, cur_y))
+            else:
+                # 单点模式
+                positions.append((wm['x'], wm['y']))
+
             if wm['type'] == 'image':
                 # 渲染图片水印
                 wm_scale = wm['scale']
@@ -351,18 +391,20 @@ class AdvancedWatermarkApp:
                     tk_img = ImageTk.PhotoImage(wm_edit)
                     self.tk_wm_images.append(tk_img) # 保持引用
                     
-                    vx = wm['x'] * self.pt_to_canvas_scale
-                    vy = (self.vis_pdf_h - wm['y']) * self.pt_to_canvas_scale
-                    
-                    self.canvas.create_image(vx, vy, image=tk_img, tags=("watermark", tag))
+                    for pos_x, pos_y in positions:
+                        vx = pos_x * self.pt_to_canvas_scale
+                        vy = (self.vis_pdf_h - pos_y) * self.pt_to_canvas_scale
+                        self.canvas.create_image(vx, vy, image=tk_img, tags=("watermark", tag))
             else:
-                vx = wm['x'] * self.pt_to_canvas_scale
-                vy = (self.vis_pdf_h - wm['y']) * self.pt_to_canvas_scale
+                # 渲染文字水印
                 font_size = int(30 * wm['scale'] * self.pt_to_canvas_scale)
-                self.canvas.create_text(vx, vy, text=wm['content'], font=(wm.get('font', 'Arial'), font_size), 
-                                       fill=wm.get('color', '#FF0000'), angle=wm['angle'], 
-                                       stipple="gray50" if wm['opacity'] < 0.8 else "", 
-                                       tags=("watermark", tag))
+                for pos_x, pos_y in positions:
+                    vx = pos_x * self.pt_to_canvas_scale
+                    vy = (self.vis_pdf_h - pos_y) * self.pt_to_canvas_scale
+                    self.canvas.create_text(vx, vy, text=wm['content'], font=(wm.get('font', 'Arial'), font_size), 
+                                           fill=wm.get('color', '#FF0000'), angle=wm['angle'], 
+                                           stipple="gray50" if wm['opacity'] < 0.8 else "", 
+                                           tags=("watermark", tag))
             
             if i == self.selected_wm_idx:
                 bbox = self.canvas.bbox(tag)
@@ -498,6 +540,50 @@ class AdvancedWatermarkApp:
             self.btn_color.config(bg=color)
             self.update_wm_from_ui()
 
+    def save_template(self):
+        from tkinter import simpledialog
+        name = simpledialog.askstring("保存模板", "请输入模板名称:")
+        if not name: return
+        
+        # 准备模板数据（移除无法序列化的 img_obj）
+        temp_wms = []
+        for wm in self.watermarks:
+            w = wm.copy()
+            if 'img_obj' in w: del w['img_obj']
+            temp_wms.append(w)
+            
+        if not hasattr(self, 'all_templates'): self.all_templates = {}
+        self.all_templates[name] = temp_wms
+        self.update_template_cb()
+        messagebox.showinfo("成功", f"模板 '{name}' 已保存")
+
+    def load_template(self):
+        name = self.cb_templates.get()
+        if not name or name not in self.all_templates: return
+        
+        self.watermarks = []
+        for w_data in self.all_templates[name]:
+            w = w_data.copy()
+            if w['type'] == 'image' and os.path.exists(w['path']):
+                w['img_obj'] = Image.open(w['path']).convert("RGBA")
+            self.watermarks.append(w)
+            
+        self.refresh_wm_list()
+        self.update_preview()
+        messagebox.showinfo("成功", f"已加载模板 '{name}'")
+
+    def delete_template(self):
+        name = self.cb_templates.get()
+        if name and messagebox.askyesno("确认", f"确定要删除模板 '{name}' 吗？"):
+            del self.all_templates[name]
+            self.update_template_cb()
+
+    def update_template_cb(self):
+        if not hasattr(self, 'all_templates'): self.all_templates = {}
+        names = list(self.all_templates.keys())
+        self.cb_templates.config(values=names)
+        if names: self.cb_templates.current(0)
+
     def add_image_watermark(self):
         f = filedialog.askopenfilename(filetypes=[("Images", "*.png *.jpg *.jpeg")])
         if f:
@@ -509,6 +595,9 @@ class AdvancedWatermarkApp:
                 "angle": 0,
                 "x": self.vis_pdf_w / 2 if self.vis_pdf_w > 0 else 100,
                 "y": self.vis_pdf_h / 2 if self.vis_pdf_h > 0 else 100,
+                "grid_mode": False,
+                "grid_gap_x": 150,
+                "grid_gap_y": 150,
                 "img_obj": Image.open(f).convert("RGBA")
             }
             self.watermarks.append(wm)
@@ -525,6 +614,9 @@ class AdvancedWatermarkApp:
             "angle": 0,
             "x": self.vis_pdf_w / 2 if self.vis_pdf_w > 0 else 100,
             "y": self.vis_pdf_h / 2 if self.vis_pdf_h > 0 else 100,
+            "grid_mode": False,
+            "grid_gap_x": 150,
+            "grid_gap_y": 150,
             "color": "#FF0000",
             "font": "Arial"
         }
@@ -556,6 +648,9 @@ class AdvancedWatermarkApp:
         self.scale_var.set(wm['scale'])
         self.opacity_var.set(wm['opacity'])
         self.angle_var.set(wm['angle'])
+        self.grid_mode_var.set(wm.get('grid_mode', False))
+        self.grid_gap_x_var.set(wm.get('grid_gap_x', 150))
+        self.grid_gap_y_var.set(wm.get('grid_gap_y', 150))
         
         if wm['type'] == 'image':
             self.watermark_path.set(wm['path'])
@@ -577,6 +672,9 @@ class AdvancedWatermarkApp:
         wm['scale'] = self.scale_var.get()
         wm['opacity'] = self.opacity_var.get()
         wm['angle'] = self.angle_var.get()
+        wm['grid_mode'] = self.grid_mode_var.get()
+        wm['grid_gap_x'] = self.grid_gap_x_var.get()
+        wm['grid_gap_y'] = self.grid_gap_y_var.get()
         if wm['type'] == 'text':
             wm['content'] = self.wm_text_var.get()
             wm['color'] = self.wm_color_var.get()
@@ -644,6 +742,8 @@ class AdvancedWatermarkApp:
                     self.custom_range_var.set(data.get("custom_range", ""))
                     self.output_dir_var.set(data.get("output_dir", "原文件目录"))
                     self.output_suffix_var.set(data.get("output_suffix", "_marked"))
+                    self.all_templates = data.get("templates", {})
+                    self.update_template_cb()
             except: pass
 
     def save_config(self):
@@ -655,7 +755,8 @@ class AdvancedWatermarkApp:
             "range_mode": self.range_mode_var.get(),
             "custom_range": self.custom_range_var.get(),
             "output_dir": self.output_dir_var.get(),
-            "output_suffix": self.output_suffix_var.get()
+            "output_suffix": self.output_suffix_var.get(),
+            "templates": getattr(self, 'all_templates', {})
         }
         try:
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
@@ -715,10 +816,13 @@ class AdvancedWatermarkApp:
                 processed_wms.append({
                     "type": "image",
                     "data": img_byte_arr.getvalue(),
-                    "display_w": wm_pil.width * ws,  # 在 PDF 中的显示宽度（点）
-                    "display_h": wm_pil.height * ws, # 在 PDF 中的显示高度（点）
+                    "display_w": wm_pil.width * ws,
+                    "display_h": wm_pil.height * ws,
                     "x": wm['x'],
-                    "y": wm['y']
+                    "y": wm['y'],
+                    "grid_mode": wm.get('grid_mode', False),
+                    "grid_gap_x": wm.get('grid_gap_x', 150),
+                    "grid_gap_y": wm.get('grid_gap_y', 150)
                 })
             else:
                 # 文字水印 (使用 PyMuPDF 的 insert_text)
@@ -731,7 +835,10 @@ class AdvancedWatermarkApp:
                     "color": self.hex_to_rgb(wm.get('color', '#FF0000')),
                     "font": self.get_pdf_font_name(wm.get('font', 'Arial'), wm['content']),
                     "x": wm['x'],
-                    "y": wm['y']
+                    "y": wm['y'],
+                    "grid_mode": wm.get('grid_mode', False),
+                    "grid_gap_x": wm.get('grid_gap_x', 150),
+                    "grid_gap_y": wm.get('grid_gap_y', 150)
                 })
 
         mode = self.range_mode_var.get()
@@ -759,23 +866,35 @@ class AdvancedWatermarkApp:
                        (mode == "偶数页" and (page_idx+1)%2==0) or \
                        (mode == "指定页面" and (page_idx+1) in custom):
                         page = doc.load_page(page_idx)
+                        page_w, page_h = page.rect.width, page.rect.height
                         
                         for pwm in processed_wms:
-                            if pwm['type'] == 'image':
-                                # 保持原始分辨率的高质量插入
-                                rect_x0 = pwm['x'] - pwm['display_w']/2
-                                rect_y0 = (self.vis_pdf_h - pwm['y']) - pwm['display_h']/2
-                                page.insert_image(fitz.Rect(rect_x0, rect_y0, rect_x0 + pwm['display_w'], rect_y0 + pwm['display_h']), 
-                                               stream=pwm['data'])
+                            # 计算所有要绘制的位置
+                            pos_list = []
+                            if pwm.get('grid_mode'):
+                                gx, gy = pwm['grid_gap_x'], pwm['grid_gap_y']
+                                for ix in range(0, int(page_w + gx), int(gx)):
+                                    for iy in range(0, int(page_h + gy), int(gy)):
+                                        pos_list.append((ix, iy))
                             else:
-                                # 插入矢量文字水印
-                                page.insert_text((pwm['x'], self.vis_pdf_h - pwm['y']), 
-                                               pwm['content'], 
-                                               fontsize=pwm['size'], 
-                                               color=pwm['color'], 
-                                               fontname=pwm['font'],
-                                               rotate=pwm['angle'],
-                                               fill_opacity=pwm['opacity'])
+                                pos_list.append((pwm['x'], pwm['y']))
+
+                            for px, py in pos_list:
+                                if pwm['type'] == 'image':
+                                    # 保持原始分辨率的高质量插入
+                                    rect_x0 = px - pwm['display_w']/2
+                                    rect_y0 = (page_h - py) - pwm['display_h']/2
+                                    page.insert_image(fitz.Rect(rect_x0, rect_y0, rect_x0 + pwm['display_w'], rect_y0 + pwm['display_h']), 
+                                                   stream=pwm['data'])
+                                else:
+                                    # 插入矢量文字水印
+                                    page.insert_text((px, page_h - py), 
+                                                   pwm['content'], 
+                                                   fontsize=pwm['size'], 
+                                                   color=pwm['color'], 
+                                                   fontname=pwm['font'],
+                                                   rotate=pwm['angle'],
+                                                   fill_opacity=pwm['opacity'])
                 
                 # 计算保存路径
                 base_name = os.path.basename(os.path.splitext(path)[0])
