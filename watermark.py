@@ -4,6 +4,7 @@ import os
 import sys
 import json
 import threading
+import webbrowser
 from io import BytesIO
 from PIL import Image, ImageTk, ImageEnhance
 
@@ -105,6 +106,9 @@ class AdvancedWatermarkApp:
             except: pass
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def open_feedback(self, e=None):
+        webbrowser.open("https://v.wjx.cn/vm/QgqYdV1.aspx")
 
     def create_modern_scale(self, parent, label_text, var, from_val, to_val, width=200, is_int=False, command=None):
         frame = tk.Frame(parent)
@@ -249,7 +253,17 @@ class AdvancedWatermarkApp:
         tk.Label(ctrl_frame, textvariable=self.status_var, wraplength=280, fg="blue").pack(pady=5)
 
         # 页脚
-        tk.Label(ctrl_frame, text="design by 比目鱼\n微信：inkstar97\nv 1.1.5  2026.01.03", font=("Arial", 8), fg="#999999", pady=20).pack()
+        footer_frame = tk.Frame(ctrl_frame)
+        footer_frame.pack(side="bottom", fill="x", pady=20)
+        
+        tk.Label(footer_frame, text="design by 比目鱼", font=("Arial", 8, "bold"), fg="#999999").pack()
+        tk.Label(footer_frame, text="微信：inkstar97", font=("Arial", 8), fg="#999999").pack()
+        
+        link_lbl = tk.Label(footer_frame, text="点此提交使用反馈", font=("Arial", 8, "underline"), fg="#0066cc", cursor="hand2")
+        link_lbl.pack(pady=5)
+        link_lbl.bind("<Button-1>", self.open_feedback)
+        
+        tk.Label(footer_frame, text="v 1.1.6  2026.01.03", font=("Arial", 7), fg="#cccccc").pack()
 
         # 3. 右侧预览区域 (带双向滚动条)
         preview_container = tk.Frame(self.main_paned)
