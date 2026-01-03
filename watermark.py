@@ -87,7 +87,7 @@ class ScrollableFrame(tk.Frame):
 class AdvancedWatermarkApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("可视化 PDF 水印工具 v 1.2.6")
+        self.root.title("可视化 PDF 水印工具 v 1.2.7")
         self.root.geometry("1200x900")
         self.root.minsize(800, 600)
         
@@ -368,7 +368,7 @@ class AdvancedWatermarkApp:
         link_lbl.pack(pady=5)
         link_lbl.bind("<Button-1>", self.open_feedback)
         
-        tk.Label(footer_frame, text="v 1.2.6  2026.01.03", font=("Arial", 7), fg="#cccccc").pack()
+        tk.Label(footer_frame, text="v 1.2.7  2026.01.03", font=("Arial", 7), fg="#cccccc").pack()
 
         # 3. 右侧预览区域 (带双向滚动条)
         preview_container = tk.Frame(self.main_paned)
@@ -413,7 +413,7 @@ class AdvancedWatermarkApp:
         self.canvas.pack(side="left", fill="both", expand=True)
 
         # 绑定事件
-        self.canvas.tag_bind("watermark", "<Button-1>", self.on_drag_start)
+        self.canvas.bind("<Button-1>", self.on_drag_start)
         self.canvas.bind("<B1-Motion>", self.on_drag_motion)
         self.canvas.bind("<ButtonRelease-1>", self.on_drag_stop)
         self._drag_data = {"x": 0, "y": 0}
@@ -459,12 +459,12 @@ class AdvancedWatermarkApp:
                 wm_scale = wm['scale']
                 wm_w = int(wm['img_obj'].width * wm_scale * self.pt_to_canvas_scale)
                 wm_h = int(wm['img_obj'].height * wm_scale * self.pt_to_canvas_scale)
-                
-                if wm_w > 0 and wm_h > 0:
+            
+            if wm_w > 0 and wm_h > 0:
                     wm_edit = wm['img_obj'].resize((wm_w, wm_h), Image.Resampling.LANCZOS).rotate(wm['angle'], expand=True)
                     alpha = wm['opacity']
-                    r, g, b, a = wm_edit.split()
-                    wm_edit.putalpha(ImageEnhance.Brightness(a).enhance(alpha))
+                r, g, b, a = wm_edit.split()
+                wm_edit.putalpha(ImageEnhance.Brightness(a).enhance(alpha))
                     tk_img = ImageTk.PhotoImage(wm_edit)
                     self.tk_wm_images.append(tk_img) # 保持引用
                     
@@ -555,10 +555,22 @@ class AdvancedWatermarkApp:
             # 缩放逻辑：使用 X 轴位移作为增量
             dx = cx - self._drag_data["start_x"]
             new_scale = max(0.05, min(3.0, self._drag_data["start_scale"] + dx / 200.0))
-            # 关键：这里直接修改字典，不触发 update_preview 避免闪烁/中断
+            # 直接更新内存值
             wm['scale'] = new_scale
             # 仅更新滑块数值显示
             self.scale_var.set(round(new_scale, 2))
+            
+            # 实时更新手柄位置，让用户看到反馈
+            self.canvas.delete("handle")
+            self.canvas.delete("selection_box")
+            bbox = self.canvas.bbox(tag)
+            if bbox:
+                x1, y1, x2, y2 = bbox
+                self.canvas.create_rectangle(bbox, outline="red", dash=(4,4), tags="selection_box")
+                self.canvas.create_rectangle(x2-5, y2-5, x2+5, y2+5, fill="#007bff", outline="white", tags=("handle", "handle_resize"))
+                mid_x = (x1 + x2) / 2
+                self.canvas.create_line(mid_x, y1, mid_x, y1-20, fill="#28a745", tags="handle")
+                self.canvas.create_oval(mid_x-6, y1-26, mid_x+6, y1-14, fill="#28a745", outline="white", tags=("handle", "handle_rotate"))
             
         elif self.active_handle == "rotate":
             dx = cx - self._drag_data["center_x"]
@@ -569,8 +581,21 @@ class AdvancedWatermarkApp:
             wm['angle'] = int(new_angle)
             self.angle_var.set(int(new_angle))
             
+            # 实时更新旋转手柄位置
+            self.canvas.delete("handle")
+            self.canvas.delete("selection_box")
+            bbox = self.canvas.bbox(tag)
+            if bbox:
+                x1, y1, x2, y2 = bbox
+                self.canvas.create_rectangle(bbox, outline="red", dash=(4,4), tags="selection_box")
+                self.canvas.create_rectangle(x2-5, y2-5, x2+5, y2+5, fill="#007bff", outline="white", tags=("handle", "handle_resize"))
+                mid_x = (x1 + x2) / 2
+                self.canvas.create_line(mid_x, y1, mid_x, y1-20, fill="#28a745", tags="handle")
+                self.canvas.create_oval(mid_x-6, y1-26, mid_x+6, y1-14, fill="#28a745", outline="white", tags=("handle", "handle_rotate"))
+            
         elif self.active_handle == "move":
-            dx, dy = cx - self._drag_data["x"], cy - self._drag_data["y"]
+        dx, dy = cx - self._drag_data["x"], cy - self._drag_data["y"]
+            tag = f"wm_{self.selected_wm_idx}"
             self.canvas.move(tag, dx, dy)
             self.canvas.move("selection_box", dx, dy)
             self.canvas.move("handle", dx, dy)
@@ -845,13 +870,13 @@ class AdvancedWatermarkApp:
     def set_pos_top_left(self):
         if self.selected_wm_idx >= 0:
             wm = self.watermarks[self.selected_wm_idx]
-            margin = 50
+        margin = 50
             # 计算大致宽度（如果是图片）
             w = wm['img_obj'].width * wm['scale'] if wm['type'] == 'image' else 100
             h = wm['img_obj'].height * wm['scale'] if wm['type'] == 'image' else 30
             wm['x'] = margin + w/2
             wm['y'] = self.vis_pdf_h - margin - h/2
-            self.update_preview()
+        self.update_preview()
 
     def toggle_range_entry(self, e=None):
         self.entry_range.config(state="normal" if self.range_mode_var.get() == "指定页面" else "disabled")
@@ -934,10 +959,10 @@ class AdvancedWatermarkApp:
                 # 使用高质量的双三次插值进行旋转
                 wm_pil = wm_pil.rotate(wa, expand=True, resample=Image.Resampling.BICUBIC)
                 
-                r, g, b, a = wm_pil.split()
-                wm_pil.putalpha(ImageEnhance.Brightness(a).enhance(wo))
+        r, g, b, a = wm_pil.split()
+        wm_pil.putalpha(ImageEnhance.Brightness(a).enhance(wo))
                 
-                img_byte_arr = BytesIO()
+        img_byte_arr = BytesIO()
                 wm_pil.save(img_byte_arr, format='PNG', optimize=True)
                 
                 processed_wms.append({
