@@ -87,7 +87,7 @@ class ScrollableFrame(tk.Frame):
 class AdvancedWatermarkApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("可视化 PDF 水印工具 v 1.2.4")
+        self.root.title("可视化 PDF 水印工具 v 1.2.5")
         self.root.geometry("1200x900")
         self.root.minsize(800, 600)
         
@@ -103,6 +103,7 @@ class AdvancedWatermarkApp:
         # 多水印支持
         self.watermarks = [] # 存储字典：{..., grid_mode, grid_gap_x, grid_gap_y}
         self.selected_wm_idx = -1
+        self.active_handle = None # 当前正在操作的手柄: None, 'resize', 'rotate'
         
         # --- 变量 (当前选中的水印属性) ---
         self.wm_text_var = tk.StringVar(value="测试水印")
@@ -359,7 +360,7 @@ class AdvancedWatermarkApp:
         link_lbl.pack(pady=5)
         link_lbl.bind("<Button-1>", self.open_feedback)
         
-        tk.Label(footer_frame, text="v 1.2.4  2026.01.03", font=("Arial", 7), fg="#cccccc").pack()
+        tk.Label(footer_frame, text="v 1.2.5  2026.01.03", font=("Arial", 7), fg="#cccccc").pack()
 
         # 3. 右侧预览区域 (带双向滚动条)
         preview_container = tk.Frame(self.main_paned)
@@ -477,14 +478,47 @@ class AdvancedWatermarkApp:
             if i == self.selected_wm_idx:
                 bbox = self.canvas.bbox(tag)
                 if bbox:
+                    # 绘制选择框
                     self.canvas.create_rectangle(bbox, outline="red", dash=(4,4), tags="selection_box")
+                    
+                    # 只为图片水印添加交互手柄
+                    if wm['type'] == 'image':
+                        x1, y1, x2, y2 = bbox
+                        # 1. 缩放手柄 (右下角)
+                        self.canvas.create_rectangle(x2-5, y2-5, x2+5, y2+5, fill="#007bff", outline="white", tags=("handle", "handle_resize"))
+                        # 2. 旋转手柄 (正上方延伸)
+                        mid_x = (x1 + x2) / 2
+                        self.canvas.create_line(mid_x, y1, mid_x, y1-20, fill="#28a745", tags="handle")
+                        self.canvas.create_oval(mid_x-6, y1-26, mid_x+6, y1-14, fill="#28a745", outline="white", tags=("handle", "handle_rotate"))
 
     def on_drag_start(self, e):
         cx = self.canvas.canvasx(e.x)
         cy = self.canvas.canvasy(e.y)
         
-        # 使用 find_withtag("current") 获取当前点击的水印
+        # 1. 检查是否点击了手柄
         items = self.canvas.find_withtag("current")
+        if items:
+            tags = self.canvas.gettags(items[0])
+            if "handle_resize" in tags:
+                self.active_handle = "resize"
+                self._drag_data["start_scale"] = self.scale_var.get()
+                self._drag_data["start_x"] = cx
+                self._drag_data["start_y"] = cy
+                return
+            elif "handle_rotate" in tags:
+                self.active_handle = "rotate"
+                # 计算初始角度
+                wm = self.watermarks[self.selected_wm_idx]
+                vx = wm['x'] * self.pt_to_canvas_scale
+                vy = (self.vis_pdf_h - wm['y']) * self.pt_to_canvas_scale
+                self._drag_data["center_x"] = vx
+                self._drag_data["center_y"] = vy
+                self._drag_data["start_angle"] = math.degrees(math.atan2(cy - vy, cx - vx))
+                self._drag_data["base_wm_angle"] = self.angle_var.get()
+                return
+
+        # 2. 检查是否点击了水印主体
+        self.active_handle = None
         if items:
             tags = self.canvas.gettags(items[0])
             for t in tags:
@@ -494,7 +528,7 @@ class AdvancedWatermarkApp:
                         self.selected_wm_idx = new_idx
                         self.wm_listbox.selection_clear(0, tk.END)
                         self.wm_listbox.selection_set(self.selected_wm_idx)
-                        self.on_wm_select() # 这会触发 update_preview
+                        self.on_wm_select() 
                     break
         
         self._drag_data["x"] = cx
@@ -504,33 +538,54 @@ class AdvancedWatermarkApp:
         if self.selected_wm_idx < 0: return
         cx = self.canvas.canvasx(e.x)
         cy = self.canvas.canvasy(e.y)
-        dx, dy = cx - self._drag_data["x"], cy - self._drag_data["y"]
         
-        # 移动选中的水印和选择框
-        tag = f"wm_{self.selected_wm_idx}"
-        self.canvas.move(tag, dx, dy)
-        self.canvas.move("selection_box", dx, dy)
-        
-        # 实时更新位置数据，但不触发重绘 (重绘太慢)
         wm = self.watermarks[self.selected_wm_idx]
-        c = self.canvas.coords(tag)
-        if c:
-            wm['x'] = c[0] / self.pt_to_canvas_scale
-            wm['y'] = self.vis_pdf_h - (c[1] / self.pt_to_canvas_scale)
-            self.lbl_coords.config(text=f"视觉坐标(Points): ({int(wm['x'])}, {int(wm['y'])})")
-        
-        self._drag_data["x"] = cx
-        self._drag_data["y"] = cy
+        tag = f"wm_{self.selected_wm_idx}"
+
+        if self.active_handle == "resize":
+            # 缩放逻辑：根据鼠标移动距离计算新比例
+            dx = cx - self._drag_data["start_x"]
+            # 简单的线性增加
+            new_scale = max(0.01, min(3.0, self._drag_data["start_scale"] + dx / 200.0))
+            self.scale_var.set(round(new_scale, 2))
+            # 缩放会触发 update_wm_from_ui -> update_preview，实现实时预览
+            
+        elif self.active_handle == "rotate":
+            # 旋转逻辑：计算鼠标相对于水印中心的角度
+            dx = cx - self._drag_data["center_x"]
+            dy = cy - self._drag_data["center_y"]
+            current_mouse_angle = math.degrees(math.atan2(dy, dx))
+            angle_diff = current_mouse_angle - self._drag_data["start_angle"]
+            new_angle = (self._drag_data["base_wm_angle"] + angle_diff) % 360
+            self.angle_var.set(int(new_angle))
+            
+        else:
+            # 普通移动逻辑
+            dx, dy = cx - self._drag_data["x"], cy - self._drag_data["y"]
+            self.canvas.move(tag, dx, dy)
+            self.canvas.move("selection_box", dx, dy)
+            self.canvas.move("handle", dx, dy) # 移动手柄
+            
+            c = self.canvas.coords(tag)
+            if c:
+                wm['x'] = c[0] / self.pt_to_canvas_scale
+                wm['y'] = self.vis_pdf_h - (c[1] / self.pt_to_canvas_scale)
+                self.lbl_coords.config(text=f"视觉坐标(Points): ({int(wm['x'])}, {int(wm['y'])})")
+            
+            self._drag_data["x"] = cx
+            self._drag_data["y"] = cy
 
     def on_drag_stop(self, e):
-        if self.selected_wm_idx < 0: return
-        tag = f"wm_{self.selected_wm_idx}"
-        c = self.canvas.coords(tag)
-        if c:
-            wm = self.watermarks[self.selected_wm_idx]
-            wm['x'] = c[0] / self.pt_to_canvas_scale
-            wm['y'] = self.vis_pdf_h - (c[1] / self.pt_to_canvas_scale)
-            self.lbl_coords.config(text=f"视觉坐标(Points): ({int(wm['x'])}, {int(wm['y'])})")
+        self.active_handle = None
+        if self.selected_wm_idx >= 0:
+            # 停止拖拽后强制同步一次最终位置
+            tag = f"wm_{self.selected_wm_idx}"
+            c = self.canvas.coords(tag)
+            if c:
+                wm = self.watermarks[self.selected_wm_idx]
+                wm['x'] = c[0] / self.pt_to_canvas_scale
+                wm['y'] = self.vis_pdf_h - (c[1] / self.pt_to_canvas_scale)
+                self.update_preview()
 
     # --- 后续通用方法 (复用之前的逻辑) ---
     def select_output_dir(self):
