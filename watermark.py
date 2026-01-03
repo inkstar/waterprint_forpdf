@@ -263,7 +263,7 @@ class AdvancedWatermarkApp:
         link_lbl.pack(pady=5)
         link_lbl.bind("<Button-1>", self.open_feedback)
         
-        tk.Label(footer_frame, text="v 1.1.6  2026.01.03", font=("Arial", 7), fg="#cccccc").pack()
+        tk.Label(footer_frame, text="v 1.1.7  2026.01.03", font=("Arial", 7), fg="#cccccc").pack()
 
         # 3. 右侧预览区域 (带双向滚动条)
         preview_container = tk.Frame(self.main_paned)
@@ -672,8 +672,12 @@ class AdvancedWatermarkApp:
         hex_color = hex_color.lstrip('#')
         return tuple(int(hex_color[i:i+2], 16)/255.0 for i in (0, 2, 4))
 
-    def get_pdf_font_name(self, font_family):
-        # 简单映射一些常用字体到 PDF 标准字体
+    def get_pdf_font_name(self, font_family, text):
+        # 检查是否包含中文字符，若包含则强制使用内置中文字库防止模糊或乱码
+        has_chinese = any('\u4e00' <= char <= '\u9fff' for char in text)
+        if has_chinese:
+            return "china-s"
+            
         mapping = {
             "Arial": "helv",
             "Helvetica": "helv",
@@ -689,20 +693,24 @@ class AdvancedWatermarkApp:
         processed_wms = []
         for wm in self.watermarks:
             if wm['type'] == 'image':
-                # 图片水印预处理
+                # 图片水印预处理：不再预先 resize，保留原始分辨率以防模糊
                 wm_pil = wm['img_obj'].copy()
                 ws, wa, wo = wm['scale'], wm['angle'], wm['opacity']
-                w, h = int(wm_pil.width * ws), int(wm_pil.height * ws)
-                wm_pil = wm_pil.resize((w, h), Image.Resampling.LANCZOS).rotate(wa, expand=True)
+                
+                # 使用高质量的双三次插值进行旋转
+                wm_pil = wm_pil.rotate(wa, expand=True, resample=Image.Resampling.BICUBIC)
+                
                 r, g, b, a = wm_pil.split()
                 wm_pil.putalpha(ImageEnhance.Brightness(a).enhance(wo))
+                
                 img_byte_arr = BytesIO()
-                wm_pil.save(img_byte_arr, format='PNG')
+                wm_pil.save(img_byte_arr, format='PNG', optimize=True)
+                
                 processed_wms.append({
                     "type": "image",
                     "data": img_byte_arr.getvalue(),
-                    "w": wm_pil.width,
-                    "h": wm_pil.height,
+                    "display_w": wm_pil.width * ws,  # 在 PDF 中的显示宽度（点）
+                    "display_h": wm_pil.height * ws, # 在 PDF 中的显示高度（点）
                     "x": wm['x'],
                     "y": wm['y']
                 })
@@ -715,7 +723,7 @@ class AdvancedWatermarkApp:
                     "opacity": wm['opacity'],
                     "angle": wm['angle'],
                     "color": self.hex_to_rgb(wm.get('color', '#FF0000')),
-                    "font": self.get_pdf_font_name(wm.get('font', 'Arial')),
+                    "font": self.get_pdf_font_name(wm.get('font', 'Arial'), wm['content']),
                     "x": wm['x'],
                     "y": wm['y']
                 })
@@ -748,12 +756,13 @@ class AdvancedWatermarkApp:
                         
                         for pwm in processed_wms:
                             if pwm['type'] == 'image':
-                                rect_x0 = pwm['x'] - pwm['w']/2
-                                rect_y0 = (self.vis_pdf_h - pwm['y']) - pwm['h']/2
-                                page.insert_image(fitz.Rect(rect_x0, rect_y0, rect_x0 + pwm['w'], rect_y0 + pwm['h']), stream=pwm['data'])
+                                # 保持原始分辨率的高质量插入
+                                rect_x0 = pwm['x'] - pwm['display_w']/2
+                                rect_y0 = (self.vis_pdf_h - pwm['y']) - pwm['display_h']/2
+                                page.insert_image(fitz.Rect(rect_x0, rect_y0, rect_x0 + pwm['display_w'], rect_y0 + pwm['display_h']), 
+                                               stream=pwm['data'])
                             else:
-                                # 插入文字水印
-                                # 注意：PyMuPDF 插入文字的坐标是基线起点，这里做简单偏移模拟中心
+                                # 插入矢量文字水印
                                 page.insert_text((pwm['x'], self.vis_pdf_h - pwm['y']), 
                                                pwm['content'], 
                                                fontsize=pwm['size'], 
