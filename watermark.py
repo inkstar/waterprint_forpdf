@@ -62,7 +62,7 @@ class ScrollableFrame(tk.Frame):
 class AdvancedWatermarkApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("可视化 PDF 水印工具 v 1.0.7")
+        self.root.title("可视化 PDF 水印工具 v 1.0.9")
         self.root.geometry("1200x900")
         self.root.minsize(800, 600)
         
@@ -72,15 +72,20 @@ class AdvancedWatermarkApp:
         self.current_page_idx = 0
         self.total_pages = 0
         self.current_pdf_img = None 
-        self.current_wm_img = None
         self.pt_to_canvas_scale = 1.0    
-        self.wm_x, self.wm_y = 0, 0
         
-        # --- 变量 ---
+        # 多水印支持
+        self.watermarks = [] # 存储字典：{type, content, path, scale, opacity, angle, x, y, font_size, color}
+        self.selected_wm_idx = -1
+        
+        # --- 变量 (当前选中的水印属性) ---
+        self.wm_text_var = tk.StringVar(value="测试水印")
         self.watermark_path = tk.StringVar()
         self.scale_var = tk.DoubleVar(value=1.0)
         self.opacity_var = tk.DoubleVar(value=0.5)
         self.angle_var = tk.DoubleVar(value=0)
+        
+        # 全局变量
         self.preview_zoom_var = tk.DoubleVar(value=1.0)
         self.range_mode_var = tk.StringVar(value="全部页面")
         self.custom_range_var = tk.StringVar(value="")
@@ -115,21 +120,42 @@ class AdvancedWatermarkApp:
         self.lbl_pdf_info = tk.Label(lf_files, text="未加载", fg="gray")
         self.lbl_pdf_info.pack()
 
-        # 水印图片
-        lf_img = tk.LabelFrame(ctrl_frame, text="2. 水印图片", padx=10, pady=5)
-        lf_img.pack(fill="x", padx=10, pady=5)
-        tk.Button(lf_img, text="选择图片", command=self.select_watermark).pack(fill="x", pady=2)
-        tk.Label(lf_img, textvariable=self.watermark_path, wraplength=250, fg="gray", font=("Arial", 8)).pack()
+        # 水印管理区域
+        lf_wm_list = tk.LabelFrame(ctrl_frame, text="2. 水印列表", padx=10, pady=5)
+        lf_wm_list.pack(fill="x", padx=10, pady=5)
+        
+        btn_wm_actions = tk.Frame(lf_wm_list)
+        btn_wm_actions.pack(fill="x")
+        tk.Button(btn_wm_actions, text="+ 图片水印", command=self.add_image_watermark, font=("Arial", 8)).pack(side="left", expand=True)
+        tk.Button(btn_wm_actions, text="+ 文字水印", command=self.add_text_watermark, font=("Arial", 8)).pack(side="left", expand=True)
+        tk.Button(btn_wm_actions, text="删除选中", command=self.delete_selected_wm, font=("Arial", 8), fg="red").pack(side="left", expand=True)
 
-        # 水印样式
-        lf_style = tk.LabelFrame(ctrl_frame, text="3. 水印样式", padx=10, pady=5)
-        lf_style.pack(fill="x", padx=10, pady=5)
-        tk.Label(lf_style, text="水印大小:").pack(anchor="w")
-        tk.Scale(lf_style, from_=0.01, to=3.0, resolution=0.01, orient="horizontal", variable=self.scale_var, command=self.update_preview).pack(fill="x")
-        tk.Label(lf_style, text="透明度:").pack(anchor="w")
-        tk.Scale(lf_style, from_=0.1, to=1.0, resolution=0.1, orient="horizontal", variable=self.opacity_var, command=self.update_preview).pack(fill="x")
-        tk.Label(lf_style, text="旋转角度:").pack(anchor="w")
-        tk.Scale(lf_style, from_=0, to=360, resolution=5, orient="horizontal", variable=self.angle_var, command=self.update_preview).pack(fill="x")
+        self.wm_listbox = tk.Listbox(lf_wm_list, height=4)
+        self.wm_listbox.pack(fill="x", pady=5)
+        self.wm_listbox.bind("<<ListboxSelect>>", self.on_wm_select)
+
+        # 水印属性编辑 (针对选中项)
+        self.lf_edit = tk.LabelFrame(ctrl_frame, text="3. 水印属性编辑", padx=10, pady=5)
+        self.lf_edit.pack(fill="x", padx=10, pady=5)
+        
+        # 文字水印特有控件
+        self.frame_text_edit = tk.Frame(self.lf_edit)
+        tk.Label(self.frame_text_edit, text="文字内容:").pack(anchor="w")
+        self.entry_wm_text = tk.Entry(self.frame_text_edit, textvariable=self.wm_text_var)
+        self.entry_wm_text.pack(fill="x")
+        self.entry_wm_text.bind("<KeyRelease>", lambda e: self.update_wm_from_ui())
+        
+        # 图片水印特有控件
+        self.frame_img_edit = tk.Frame(self.lf_edit)
+        tk.Button(self.frame_img_edit, text="更换图片", command=self.select_watermark).pack(fill="x")
+        
+        # 通用属性
+        tk.Label(self.lf_edit, text="水印大小/字号:").pack(anchor="w")
+        tk.Scale(self.lf_edit, from_=0.01, to=3.0, resolution=0.01, orient="horizontal", variable=self.scale_var, command=lambda v: self.update_wm_from_ui()).pack(fill="x")
+        tk.Label(self.lf_edit, text="透明度:").pack(anchor="w")
+        tk.Scale(self.lf_edit, from_=0.1, to=1.0, resolution=0.1, orient="horizontal", variable=self.opacity_var, command=lambda v: self.update_wm_from_ui()).pack(fill="x")
+        tk.Label(self.lf_edit, text="旋转角度:").pack(anchor="w")
+        tk.Scale(self.lf_edit, from_=0, to=360, resolution=5, orient="horizontal", variable=self.angle_var, command=lambda v: self.update_wm_from_ui()).pack(fill="x")
 
         # 位置控制
         lf_pos = tk.LabelFrame(ctrl_frame, text="4. 位置控制", padx=10, pady=5)
@@ -217,56 +243,85 @@ class AdvancedWatermarkApp:
         zoom = self.preview_zoom_var.get()
         display_w = int(self.current_pdf_img.width * zoom)
         display_h = int(self.current_pdf_img.height * zoom)
-        
         self.pt_to_canvas_scale = (display_w / self.vis_pdf_w)
         
         self.tk_bg_img = ImageTk.PhotoImage(self.current_pdf_img.resize((display_w, display_h), Image.Resampling.LANCZOS))
-        
         self.canvas.delete("all")
-        # 将背景放在 Canvas 的 0,0 位置
         self.canvas.create_image(0, 0, image=self.tk_bg_img, tags="background", anchor="nw")
-        # 设置滚动区域为图像大小
         self.canvas.config(scrollregion=(0, 0, display_w, display_h))
         
-        if self.current_wm_img:
-            wm_scale = self.scale_var.get()
-            wm_w = int(self.current_wm_img.width * wm_scale * self.pt_to_canvas_scale)
-            wm_h = int(self.current_wm_img.height * wm_scale * self.pt_to_canvas_scale)
+        self.tk_wm_images = []
+
+        for i, wm in enumerate(self.watermarks):
+            tag = f"wm_{i}"
+            if wm['type'] == 'image':
+                wm_scale = wm['scale']
+                wm_w = int(wm['img_obj'].width * wm_scale * self.pt_to_canvas_scale)
+                wm_h = int(wm['img_obj'].height * wm_scale * self.pt_to_canvas_scale)
+                
+                if wm_w > 0 and wm_h > 0:
+                    wm_edit = wm['img_obj'].resize((wm_w, wm_h), Image.Resampling.LANCZOS).rotate(wm['angle'], expand=True)
+                    alpha = wm['opacity']
+                    r, g, b, a = wm_edit.split()
+                    wm_edit.putalpha(ImageEnhance.Brightness(a).enhance(alpha))
+                    tk_img = ImageTk.PhotoImage(wm_edit)
+                    self.tk_wm_images.append(tk_img)
+                    
+                    vx = wm['x'] * self.pt_to_canvas_scale
+                    vy = (self.vis_pdf_h - wm['y']) * self.pt_to_canvas_scale
+                    self.canvas.create_image(vx, vy, image=tk_img, tags=("watermark", tag))
+            else:
+                vx = wm['x'] * self.pt_to_canvas_scale
+                vy = (self.vis_pdf_h - wm['y']) * self.pt_to_canvas_scale
+                font_size = int(30 * wm['scale'] * self.pt_to_canvas_scale)
+                self.canvas.create_text(vx, vy, text=wm['content'], font=("Arial", font_size), 
+                                       fill=wm['color'], angle=wm['angle'], 
+                                       stipple="gray50" if wm['opacity'] < 0.8 else "", 
+                                       tags=("watermark", tag))
             
-            if wm_w > 0 and wm_h > 0:
-                wm_edit = self.current_wm_img.resize((wm_w, wm_h), Image.Resampling.LANCZOS).rotate(self.angle_var.get(), expand=True)
-                alpha = self.opacity_var.get()
-                r, g, b, a = wm_edit.split()
-                wm_edit.putalpha(ImageEnhance.Brightness(a).enhance(alpha))
-                self.tk_wm_img = ImageTk.PhotoImage(wm_edit)
-                
-                if self.wm_x == 0: self.wm_x, self.wm_y = self.vis_pdf_w/2, self.vis_pdf_h/2
-                
-                # 计算 Canvas 坐标 (不再依赖居中偏移，直接使用绝对坐标)
-                vx = self.wm_x * self.pt_to_canvas_scale
-                vy = (self.vis_pdf_h - self.wm_y) * self.pt_to_canvas_scale
-                
-                self.canvas.create_image(vx, vy, image=self.tk_wm_img, tags="watermark")
-                self.lbl_coords.config(text=f"视觉坐标(Points): ({int(self.wm_x)}, {int(self.wm_y)})")
+            if i == self.selected_wm_idx:
+                bbox = self.canvas.bbox(tag)
+                if bbox:
+                    self.canvas.create_rectangle(bbox, outline="red", dash=(4,4), tags="selection_box")
+
+    def on_drag_start(self, e):
+        cx = self.canvas.canvasx(e.x)
+        cy = self.canvas.canvasy(e.y)
+        
+        # 查找被点击的水印
+        item = self.canvas.find_closest(cx, cy)
+        tags = self.canvas.gettags(item)
+        for t in tags:
+            if t.startswith("wm_"):
+                self.selected_wm_idx = int(t.split("_")[1])
+                self.wm_listbox.selection_clear(0, tk.END)
+                self.wm_listbox.selection_set(self.selected_wm_idx)
+                self.on_wm_select()
+                break
+        
+        self._drag_data["x"] = cx
+        self._drag_data["y"] = cy
 
     def on_drag_motion(self, e):
-        # 拖拽时需要考虑 Canvas 的滚动偏移
+        if self.selected_wm_idx < 0: return
         cx = self.canvas.canvasx(e.x)
         cy = self.canvas.canvasy(e.y)
         dx, dy = cx - self._drag_data["x"], cy - self._drag_data["y"]
-        self.canvas.move("watermark", dx, dy)
+        
+        tag = f"wm_{self.selected_wm_idx}"
+        self.canvas.move(tag, dx, dy)
+        self.canvas.move("selection_box", dx, dy)
         self._drag_data["x"], self._drag_data["y"] = cx, cy
 
-    def on_drag_start(self, e):
-        self._drag_data["x"] = self.canvas.canvasx(e.x)
-        self._drag_data["y"] = self.canvas.canvasy(e.y)
-
     def on_drag_stop(self, e):
-        c = self.canvas.coords("watermark")
+        if self.selected_wm_idx < 0: return
+        tag = f"wm_{self.selected_wm_idx}"
+        c = self.canvas.coords(tag)
         if c:
-            self.wm_x = c[0] / self.pt_to_canvas_scale
-            self.wm_y = self.vis_pdf_h - (c[1] / self.pt_to_canvas_scale)
-            self.lbl_coords.config(text=f"视觉坐标(Points): ({int(self.wm_x)}, {int(self.wm_y)})")
+            wm = self.watermarks[self.selected_wm_idx]
+            wm['x'] = c[0] / self.pt_to_canvas_scale
+            wm['y'] = self.vis_pdf_h - (c[1] / self.pt_to_canvas_scale)
+            self.lbl_coords.config(text=f"视觉坐标(Points): ({int(wm['x'])}, {int(wm['y'])})")
 
     # --- 后续通用方法 (复用之前的逻辑) ---
     def select_output_dir(self):
@@ -321,11 +376,101 @@ class AdvancedWatermarkApp:
         self.vis_pdf_w, self.vis_pdf_h = (rect.height, rect.width) if rot % 180 == 90 else (rect.width, rect.height)
         self.update_preview()
 
+    def add_image_watermark(self):
+        f = filedialog.askopenfilename(filetypes=[("Images", "*.png *.jpg *.jpeg")])
+        if f:
+            wm = {
+                "type": "image",
+                "path": f,
+                "scale": 1.0,
+                "opacity": 0.5,
+                "angle": 0,
+                "x": self.vis_pdf_w / 2 if self.vis_pdf_w > 0 else 100,
+                "y": self.vis_pdf_h / 2 if self.vis_pdf_h > 0 else 100,
+                "img_obj": Image.open(f).convert("RGBA")
+            }
+            self.watermarks.append(wm)
+            self.refresh_wm_list()
+            self.wm_listbox.selection_set(len(self.watermarks)-1)
+            self.on_wm_select()
+
+    def add_text_watermark(self):
+        wm = {
+            "type": "text",
+            "content": "测试水印",
+            "scale": 1.0, # 这里对应字号缩放
+            "opacity": 0.5,
+            "angle": 0,
+            "x": self.vis_pdf_w / 2 if self.vis_pdf_w > 0 else 100,
+            "y": self.vis_pdf_h / 2 if self.vis_pdf_h > 0 else 100,
+            "color": "#FF0000"
+        }
+        self.watermarks.append(wm)
+        self.refresh_wm_list()
+        self.wm_listbox.selection_set(len(self.watermarks)-1)
+        self.on_wm_select()
+
+    def delete_selected_wm(self):
+        if self.selected_wm_idx >= 0:
+            del self.watermarks[self.selected_wm_idx]
+            self.selected_wm_idx = -1
+            self.refresh_wm_list()
+            self.update_preview()
+
+    def refresh_wm_list(self):
+        self.wm_listbox.delete(0, tk.END)
+        for i, wm in enumerate(self.watermarks):
+            name = f"图: {os.path.basename(wm['path'])}" if wm['type'] == 'image' else f"文: {wm['content']}"
+            self.wm_listbox.insert(tk.END, name)
+
+    def on_wm_select(self, e=None):
+        selection = self.wm_listbox.curselection()
+        if not selection: return
+        self.selected_wm_idx = selection[0]
+        wm = self.watermarks[self.selected_wm_idx]
+        
+        # 加载到 UI 变量
+        self.scale_var.set(wm['scale'])
+        self.opacity_var.set(wm['opacity'])
+        self.angle_var.set(wm['angle'])
+        
+        if wm['type'] == 'image':
+            self.watermark_path.set(wm['path'])
+            self.frame_text_edit.pack_forget()
+            self.frame_img_edit.pack(fill="x", before=self.lf_edit.winfo_children()[2])
+        else:
+            self.wm_text_var.set(wm['content'])
+            self.frame_img_edit.pack_forget()
+            self.frame_text_edit.pack(fill="x", before=self.lf_edit.winfo_children()[2])
+        
+        self.update_preview()
+
+    def update_wm_from_ui(self):
+        if self.selected_wm_idx < 0: return
+        wm = self.watermarks[self.selected_wm_idx]
+        wm['scale'] = self.scale_var.get()
+        wm['opacity'] = self.opacity_var.get()
+        wm['angle'] = self.angle_var.get()
+        if wm['type'] == 'text':
+            wm['content'] = self.wm_text_var.get()
+        
+        # 更新列表显示名
+        name = f"图: {os.path.basename(wm['path'])}" if wm['type'] == 'image' else f"文: {wm['content']}"
+        self.wm_listbox.delete(self.selected_wm_idx)
+        self.wm_listbox.insert(self.selected_wm_idx, name)
+        self.wm_listbox.selection_set(self.selected_wm_idx)
+        
+        self.update_preview()
+
     def select_watermark(self):
         f = filedialog.askopenfilename(filetypes=[("Images", "*.png *.jpg *.jpeg")])
         if f:
-            self.watermark_path.set(f); self.current_wm_img = Image.open(f).convert("RGBA")
-            self.update_preview()
+            if self.selected_wm_idx >= 0 and self.watermarks[self.selected_wm_idx]['type'] == 'image':
+                wm = self.watermarks[self.selected_wm_idx]
+                wm['path'] = f
+                wm['img_obj'] = Image.open(f).convert("RGBA")
+                self.watermark_path.set(f)
+                self.update_wm_from_ui()
 
     def set_pos_center(self):
         self.wm_x, self.wm_y = self.vis_pdf_w/2, self.vis_pdf_h/2; self.update_preview()
@@ -380,20 +525,49 @@ class AdvancedWatermarkApp:
         self.btn_run.config(state="disabled")
         threading.Thread(target=self.process_files, daemon=True).start()
 
+    def hex_to_rgb(self, hex_color):
+        hex_color = hex_color.lstrip('#')
+        return tuple(int(hex_color[i:i+2], 16)/255.0 for i in (0, 2, 4))
+
     def process_files(self):
-        wm_pil = self.current_wm_img.copy()
-        ws, wa, wo = self.scale_var.get(), self.angle_var.get(), self.opacity_var.get()
-        w, h = int(wm_pil.width * ws), int(wm_pil.height * ws)
-        wm_pil = wm_pil.resize((w, h), Image.Resampling.LANCZOS).rotate(wa, expand=True)
-        r, g, b, a = wm_pil.split()
-        wm_pil.putalpha(ImageEnhance.Brightness(a).enhance(wo))
-        img_byte_arr = BytesIO()
-        wm_pil.save(img_byte_arr, format='PNG')
-        wm_data = img_byte_arr.getvalue()
+        # 预编译所有水印数据
+        processed_wms = []
+        for wm in self.watermarks:
+            if wm['type'] == 'image':
+                # 图片水印预处理
+                wm_pil = wm['img_obj'].copy()
+                ws, wa, wo = wm['scale'], wm['angle'], wm['opacity']
+                w, h = int(wm_pil.width * ws), int(wm_pil.height * ws)
+                wm_pil = wm_pil.resize((w, h), Image.Resampling.LANCZOS).rotate(wa, expand=True)
+                r, g, b, a = wm_pil.split()
+                wm_pil.putalpha(ImageEnhance.Brightness(a).enhance(wo))
+                img_byte_arr = BytesIO()
+                wm_pil.save(img_byte_arr, format='PNG')
+                processed_wms.append({
+                    "type": "image",
+                    "data": img_byte_arr.getvalue(),
+                    "w": wm_pil.width,
+                    "h": wm_pil.height,
+                    "x": wm['x'],
+                    "y": wm['y']
+                })
+            else:
+                # 文字水印 (使用 PyMuPDF 的 insert_text)
+                processed_wms.append({
+                    "type": "text",
+                    "content": wm['content'],
+                    "size": 30 * wm['scale'],
+                    "opacity": wm['opacity'],
+                    "angle": wm['angle'],
+                    "color": self.hex_to_rgb(wm['color']),
+                    "x": wm['x'],
+                    "y": wm['y']
+                })
 
         mode = self.range_mode_var.get()
         output_dir = self.output_dir_var.get()
         custom = set()
+        # ... (custom 范围逻辑保持不变)
         if mode == "指定页面":
             try:
                 for p in self.custom_range_var.get().replace("，", ",").split(","):
@@ -414,10 +588,21 @@ class AdvancedWatermarkApp:
                        (mode == "偶数页" and (page_idx+1)%2==0) or \
                        (mode == "指定页面" and (page_idx+1) in custom):
                         page = doc.load_page(page_idx)
-                        pw, ph = wm_pil.width, wm_pil.height
-                        rect_x0 = self.wm_x - pw/2
-                        rect_y0 = (self.vis_pdf_h - self.wm_y) - ph/2
-                        page.insert_image(fitz.Rect(rect_x0, rect_y0, rect_x0 + pw, rect_y0 + ph), stream=wm_data)
+                        
+                        for pwm in processed_wms:
+                            if pwm['type'] == 'image':
+                                rect_x0 = pwm['x'] - pwm['w']/2
+                                rect_y0 = (self.vis_pdf_h - pwm['y']) - pwm['h']/2
+                                page.insert_image(fitz.Rect(rect_x0, rect_y0, rect_x0 + pwm['w'], rect_y0 + pwm['h']), stream=pwm['data'])
+                            else:
+                                # 插入文字水印
+                                # 注意：PyMuPDF 插入文字的坐标是基线起点，这里做简单偏移模拟中心
+                                page.insert_text((pwm['x'], self.vis_pdf_h - pwm['y']), 
+                                               pwm['content'], 
+                                               fontsize=pwm['size'], 
+                                               color=pwm['color'], 
+                                               rotate=pwm['angle'],
+                                               fill_opacity=pwm['opacity'])
                 
                 # 计算保存路径
                 if output_dir == "原文件目录":
