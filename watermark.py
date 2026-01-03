@@ -68,6 +68,7 @@ class AdvancedWatermarkApp:
         
         # --- 核心数据 ---
         self.pdf_files = []
+        self.current_pdf_idx = 0
         self.current_doc = None
         self.current_page_idx = 0
         self.total_pages = 0
@@ -119,7 +120,14 @@ class AdvancedWatermarkApp:
         lf_files = tk.LabelFrame(ctrl_frame, text="1. 文件选择", padx=10, pady=5)
         lf_files.pack(fill="x", padx=10, pady=5)
         tk.Button(lf_files, text="选择 PDF (支持多选)", command=self.select_pdfs).pack(fill="x", pady=2)
-        self.lbl_pdf_info = tk.Label(lf_files, text="未加载", fg="gray")
+        
+        # 文件切换控制
+        self.frame_file_switch = tk.Frame(lf_files)
+        self.frame_file_switch.pack(fill="x", pady=2)
+        tk.Button(self.frame_file_switch, text="< 上一个文件", command=lambda: self.change_file(-1), font=("Arial", 7)).pack(side="left", expand=True)
+        tk.Button(self.frame_file_switch, text="下一个文件 >", command=lambda: self.change_file(1), font=("Arial", 7)).pack(side="left", expand=True)
+        
+        self.lbl_pdf_info = tk.Label(lf_files, text="未加载", fg="gray", wraplength=300)
         self.lbl_pdf_info.pack()
 
         # 水印管理区域
@@ -177,8 +185,9 @@ class AdvancedWatermarkApp:
         lf_pos.pack(fill="x", padx=10, pady=5)
         btn_frame = tk.Frame(lf_pos)
         btn_frame.pack(fill="x")
-        tk.Button(btn_frame, text="↖ 左上角", command=self.set_pos_top_left).pack(side="left", expand=True)
-        tk.Button(btn_frame, text="✛ 居中", command=self.set_pos_center).pack(side="left", expand=True)
+        tk.Button(btn_frame, text="↖ 左上角", command=self.set_pos_top_left, font=("Arial", 8)).pack(side="left", expand=True)
+        tk.Button(btn_frame, text="↗ 右上角", command=self.set_pos_top_right, font=("Arial", 8)).pack(side="left", expand=True)
+        tk.Button(btn_frame, text="✛ 居中", command=self.set_pos_center, font=("Arial", 8)).pack(side="left", expand=True)
         self.lbl_coords = tk.Label(lf_pos, text="X: 0, Y: 0", pady=5)
         self.lbl_coords.pack()
 
@@ -201,12 +210,12 @@ class AdvancedWatermarkApp:
         # 执行区域
         self.progress = ttk.Progressbar(ctrl_frame, orient="horizontal", mode="determinate")
         self.progress.pack(fill="x", padx=10, pady=20)
-        self.btn_run = tk.Button(ctrl_frame, text="开始批量处理", bg="#28a745", fg="white", height=2, font=("微软雅黑", 10, "bold"), command=self.start_processing_thread)
+        self.btn_run = tk.Button(ctrl_frame, text="开始批量处理", bg="#28a745", fg="black", height=2, font=("微软雅黑", 10, "bold"), command=self.start_processing_thread)
         self.btn_run.pack(fill="x", padx=10, pady=5)
         tk.Label(ctrl_frame, textvariable=self.status_var, wraplength=280, fg="blue").pack(pady=5)
 
         # 页脚
-        tk.Label(ctrl_frame, text="design by 比目鱼\n微信：inkstar97\nv 1.0.7  2026.01.03", font=("Arial", 8), fg="#999999", pady=20).pack()
+        tk.Label(ctrl_frame, text="design by 比目鱼\n微信：inkstar97\nv 1.1.3  2026.01.03", font=("Arial", 8), fg="#999999", pady=20).pack()
 
         # 3. 右侧预览区域 (带双向滚动条)
         preview_container = tk.Frame(self.main_paned)
@@ -366,9 +375,25 @@ class AdvancedWatermarkApp:
     def select_pdfs(self):
         files = filedialog.askopenfilenames(filetypes=[("PDF Files", "*.pdf")])
         if files:
-            self.pdf_files = files
-            self.lbl_pdf_info.config(text=f"已选 {len(files)} 个文件")
-            self.load_pdf_doc(files[0])
+            self.pdf_files = list(files)
+            self.current_pdf_idx = 0
+            self.update_file_info_label()
+            self.load_pdf_doc(self.pdf_files[0])
+
+    def update_file_info_label(self):
+        if self.pdf_files:
+            fname = os.path.basename(self.pdf_files[self.current_pdf_idx])
+            self.lbl_pdf_info.config(text=f"文件 ({self.current_pdf_idx + 1}/{len(self.pdf_files)}):\n{fname}", fg="blue")
+        else:
+            self.lbl_pdf_info.config(text="未加载", fg="gray")
+
+    def change_file(self, delta):
+        if not self.pdf_files: return
+        new_idx = self.current_pdf_idx + delta
+        if 0 <= new_idx < len(self.pdf_files):
+            self.current_pdf_idx = new_idx
+            self.update_file_info_label()
+            self.load_pdf_doc(self.pdf_files[self.current_pdf_idx])
 
     def load_pdf_doc(self, path):
         if self.current_doc: self.current_doc.close()
@@ -520,6 +545,17 @@ class AdvancedWatermarkApp:
         if self.selected_wm_idx >= 0:
             wm = self.watermarks[self.selected_wm_idx]
             wm['x'], wm['y'] = self.vis_pdf_w/2, self.vis_pdf_h/2
+            self.update_preview()
+
+    def set_pos_top_right(self):
+        if self.selected_wm_idx >= 0:
+            wm = self.watermarks[self.selected_wm_idx]
+            margin = 50
+            # 计算大致宽度（如果是图片）
+            w = wm['img_obj'].width * wm['scale'] if wm['type'] == 'image' else 100
+            h = wm['img_obj'].height * wm['scale'] if wm['type'] == 'image' else 30
+            wm['x'] = self.vis_pdf_w - margin - w/2
+            wm['y'] = self.vis_pdf_h - margin - h/2
             self.update_preview()
 
     def set_pos_top_left(self):
