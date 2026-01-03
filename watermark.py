@@ -78,7 +78,7 @@ class ScrollableFrame(tk.Frame):
 class AdvancedWatermarkApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("可视化 PDF 水印工具 v 1.1.1")
+        self.root.title("可视化 PDF 水印工具 v 1.2.3")
         self.root.geometry("1200x900")
         self.root.minsize(800, 600)
         
@@ -350,7 +350,7 @@ class AdvancedWatermarkApp:
         link_lbl.pack(pady=5)
         link_lbl.bind("<Button-1>", self.open_feedback)
         
-        tk.Label(footer_frame, text="v 1.2.2  2026.01.03", font=("Arial", 7), fg="#cccccc").pack()
+        tk.Label(footer_frame, text="v 1.2.3  2026.01.03", font=("Arial", 7), fg="#cccccc").pack()
 
         # 3. 右侧预览区域 (带双向滚动条)
         preview_container = tk.Frame(self.main_paned)
@@ -554,6 +554,25 @@ class AdvancedWatermarkApp:
             self.current_pdf_idx = new_idx
             self.update_file_info_label()
             self.load_pdf_doc(self.pdf_files[self.current_pdf_idx])
+
+    def bind_mouse_wheel(self, widget):
+        # 针对不同平台优化滚动体验
+        if sys.platform == "darwin": # macOS 触控板/鼠标
+            # 垂直滚动
+            widget.bind("<MouseWheel>", lambda e: widget.yview_scroll(int(-1 * e.delta), "units"))
+            # macOS 特有的水平滚动 (Shift + 滚轮 或 触控板左右滑动)
+            widget.bind("<Shift-MouseWheel>", lambda e: widget.xview_scroll(int(-1 * e.delta), "units"))
+        else: # Windows/Linux
+            widget.bind("<MouseWheel>", lambda e: widget.yview_scroll(int(-1*(e.delta/120)), "units"))
+            # Windows 下 Shift+滚轮 通常用于横向滚动
+            widget.bind("<Shift-MouseWheel>", lambda e: widget.xview_scroll(int(-1*(e.delta/120)), "units"))
+        
+        # Linux 特有
+        widget.bind("<Button-4>", lambda e: widget.yview_scroll(-1, "units"))
+        widget.bind("<Button-5>", lambda e: widget.yview_scroll(1, "units"))
+
+        # 为了让 bind 生效，必须让 widget 能够接收事件
+        widget.bind("<Enter>", lambda e: widget.focus_set())
 
     def load_pdf_doc(self, path):
         if self.current_doc: self.current_doc.close()
