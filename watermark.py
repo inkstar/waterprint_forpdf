@@ -450,12 +450,12 @@ class AdvancedWatermarkApp:
                 wm_scale = wm['scale']
                 wm_w = int(wm['img_obj'].width * wm_scale * self.pt_to_canvas_scale)
                 wm_h = int(wm['img_obj'].height * wm_scale * self.pt_to_canvas_scale)
-            
-            if wm_w > 0 and wm_h > 0:
+                
+                if wm_w > 0 and wm_h > 0:
                     wm_edit = wm['img_obj'].resize((wm_w, wm_h), Image.Resampling.LANCZOS).rotate(wm['angle'], expand=True)
                     alpha = wm['opacity']
-                r, g, b, a = wm_edit.split()
-                wm_edit.putalpha(ImageEnhance.Brightness(a).enhance(alpha))
+                    r, g, b, a = wm_edit.split()
+                    wm_edit.putalpha(ImageEnhance.Brightness(a).enhance(alpha))
                     tk_img = ImageTk.PhotoImage(wm_edit)
                     self.tk_wm_images.append(tk_img) # 保持引用
                     
@@ -875,10 +875,10 @@ class AdvancedWatermarkApp:
                 # 使用高质量的双三次插值进行旋转
                 wm_pil = wm_pil.rotate(wa, expand=True, resample=Image.Resampling.BICUBIC)
                 
-        r, g, b, a = wm_pil.split()
-        wm_pil.putalpha(ImageEnhance.Brightness(a).enhance(wo))
+                r, g, b, a = wm_pil.split()
+                wm_pil.putalpha(ImageEnhance.Brightness(a).enhance(wo))
                 
-        img_byte_arr = BytesIO()
+                img_byte_arr = BytesIO()
                 wm_pil.save(img_byte_arr, format='PNG', optimize=True)
                 
                 processed_wms.append({
