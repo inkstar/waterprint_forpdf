@@ -1,0 +1,113 @@
+name: Build and Package
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    outputs:
+      exe_path: dist/PDFWatermark.exe
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller PDFWatermark.spec
+          
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PDFWatermark-Windows
+          path: dist/PDFWatermark.exe
+
+  build-macos:
+    runs-on: macos-latest
+    outputs:
+      dmg_path: dist/PDFWatermark.dmg
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller PDFWatermark.spec
+          
+      - name: Create DMG
+        run: |
+          brew install create-dmg
+          mkdir -p dist/dmg
+          cp -r "dist/PDFWatermark.app" dist/dmg/
+          create-dmg \
+            --volname "PDFWatermark" \
+            --window-pos 200 120 \
+            --window-size 800 400 \
+            --icon-size 100 \
+            --icon "PDFWatermark.app" 200 190 \
+            --hide-extension "PDFWatermark.app" \
+            --app-drop-link 600 185 \
+            "dist/PDFWatermark.dmg" \
+            "dist/dmg/"
+            
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PDFWatermark-MacOS
+          path: dist/PDFWatermark.dmg
+
+  release:
+    needs: [build-windows, build-macos]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: PDFWatermark-Windows
+          path: dist-windows
+
+      - name: Download MacOS Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: PDFWatermark-MacOS
+          path: dist-macos
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist-windows/PDFWatermark.exe
+            dist-macos/PDFWatermark.dmg
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
