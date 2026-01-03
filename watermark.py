@@ -108,6 +108,7 @@ class AdvancedWatermarkApp:
         self.status_var = tk.StringVar(value="准备就绪")
         self.page_info_var = tk.StringVar(value="0 / 0")
 
+        self.last_output_path = "" # 记录最后一次生成的文件或目录
         self.load_config()
         self.setup_ui()
         
@@ -116,6 +117,48 @@ class AdvancedWatermarkApp:
             except: pass
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def open_output_folder(self):
+        # 如果没有导出过，尝试获取当前设置的目录
+        path = getattr(self, 'last_output_dir', None)
+        if not path:
+            od = self.output_dir_var.get()
+            if od != "原文件目录" and os.path.exists(od):
+                path = od
+        
+        if not path:
+            messagebox.showinfo("提示", "请先执行批量处理，或在输出设置中指定目录")
+            return
+            
+        try:
+            if sys.platform == 'win32':
+                os.startfile(path)
+            elif sys.platform == 'darwin':
+                import subprocess
+                subprocess.run(['open', path])
+            else:
+                import subprocess
+                subprocess.run(['xdg-open', path])
+        except Exception as e:
+            messagebox.showerror("错误", f"无法打开文件夹: {e}")
+
+    def open_output_folder(self):
+        if not self.last_output_path or not os.path.exists(self.last_output_path):
+            messagebox.showwarning("提示", "尚未生成文件或输出目录不存在")
+            return
+            
+        path = self.last_output_path
+        if os.path.isfile(path):
+            path = os.path.dirname(path)
+            
+        if sys.platform == "darwin": # macOS
+            import subprocess
+            subprocess.run(["open", path])
+        elif sys.platform == "win32": # Windows
+            os.startfile(path)
+        else: # Linux
+            import subprocess
+            subprocess.run(["xdg-open", path])
 
     def open_feedback(self, e=None):
         webbrowser.open("https://v.wjx.cn/vm/QgqYdV1.aspx")
@@ -281,6 +324,10 @@ class AdvancedWatermarkApp:
         self.progress.pack(fill="x", padx=10, pady=20)
         self.btn_run = tk.Button(ctrl_frame, text="开始批量处理", bg="#28a745", fg="black", height=2, font=("微软雅黑", 10, "bold"), command=self.start_processing_thread)
         self.btn_run.pack(fill="x", padx=10, pady=5)
+        
+        self.btn_open_folder = tk.Button(ctrl_frame, text="📂 打开输出文件夹", command=self.open_output_folder, font=("Arial", 9))
+        self.btn_open_folder.pack(fill="x", padx=10, pady=2)
+        
         tk.Label(ctrl_frame, textvariable=self.status_var, wraplength=280, fg="blue").pack(pady=5)
 
         # 页脚
@@ -294,7 +341,7 @@ class AdvancedWatermarkApp:
         link_lbl.pack(pady=5)
         link_lbl.bind("<Button-1>", self.open_feedback)
         
-        tk.Label(footer_frame, text="v 1.2.0  2026.01.03", font=("Arial", 7), fg="#cccccc").pack()
+        tk.Label(footer_frame, text="v 1.2.1  2026.01.03", font=("Arial", 7), fg="#cccccc").pack()
 
         # 3. 右侧预览区域 (带双向滚动条)
         preview_container = tk.Frame(self.main_paned)
@@ -901,12 +948,18 @@ class AdvancedWatermarkApp:
                 final_name = base_name + suffix + ".pdf"
                 
                 if output_dir == "原文件目录":
-                    save_path = os.path.join(os.path.dirname(path), final_name)
+                    out_dir = os.path.dirname(path)
+                    save_path = os.path.join(out_dir, final_name)
                 else:
-                    save_path = os.path.join(output_dir, final_name)
+                    out_dir = output_dir
+                    save_path = os.path.join(out_dir, final_name)
+                
+                # 记录最后一次导出的目录
+                self.last_output_dir = out_dir
                 
                 doc.save(save_path)
                 doc.close()
+                self.last_output_path = save_path # 记录最后生成的文件路径
                 count += 1
             except Exception as e: print(f"失败: {e}")
             self.progress["value"] = (i+1)/len(self.pdf_files)*100
