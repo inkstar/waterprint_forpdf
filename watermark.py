@@ -34,51 +34,60 @@ def get_config_path():
 CONFIG_FILE = get_config_path()
 
 # --- 通用滚动框架组件 ---
+def unified_mouse_wheel_bind(widget):
+    """统一处理 macOS/Windows/Linux 的鼠标滚轮与触控板绑定"""
+    def _on_mousewheel(e):
+        if sys.platform == "darwin": # macOS
+            widget.yview_scroll(int(-1 * e.delta), "units")
+        else: # Windows/Linux
+            widget.yview_scroll(int(-1 * (e.delta / 120)), "units")
+
+    def _on_shift_mousewheel(e):
+        if hasattr(widget, 'xview'):
+            if sys.platform == "darwin": # macOS
+                widget.xview_scroll(int(-1 * e.delta), "units")
+            else: # Windows/Linux
+                widget.xview_scroll(int(-1 * (e.delta / 120)), "units")
+
+    # 绑定垂直滚动
+    widget.bind("<MouseWheel>", _on_mousewheel)
+    # 绑定水平滚动
+    widget.bind("<Shift-MouseWheel>", _on_shift_mousewheel)
+    
+    # Linux 兼容性
+    widget.bind("<Button-4>", lambda e: widget.yview_scroll(-1, "units"))
+    widget.bind("<Button-5>", lambda e: widget.yview_scroll(1, "units"))
+
+    # 关键：当鼠标进入组件区域时，强制夺取焦点以接收滚动事件
+    widget.bind("<Enter>", lambda e: widget.focus_set())
+
 class ScrollableFrame(tk.Frame):
     def __init__(self, container, *args, **kwargs):
         super().__init__(container, *args, **kwargs)
-        canvas = tk.Canvas(self, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
-        self.scrollable_window = tk.Frame(canvas)
+        self.canvas = tk.Canvas(self, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.scrollable_window = tk.Frame(self.canvas)
 
         self.scrollable_window.bind(
             "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         )
 
-        canvas.create_window((0, 0), window=self.scrollable_window, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
+        self.canvas.create_window((0, 0), window=self.scrollable_window, anchor="nw")
+        self.canvas.configure(yscrollcommand=scrollbar.set)
 
-        canvas.pack(side="left", fill="both", expand=True)
+        self.canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         
-        # 绑定鼠标滚轮
-        self.bind_mouse_wheel(canvas)
-
-    def bind_mouse_wheel(self, widget):
-        # 针对不同平台优化滚动体验
-        if sys.platform == "darwin": # macOS 触控板/鼠标
-            # 垂直滚动
-            widget.bind("<MouseWheel>", lambda e: widget.yview_scroll(int(-1 * e.delta), "units"))
-            # macOS 特有的水平滚动 (Shift + 滚轮 或 触控板左右滑动)
-            widget.bind("<Shift-MouseWheel>", lambda e: widget.xview_scroll(int(-1 * e.delta), "units"))
-        else: # Windows/Linux
-            widget.bind("<MouseWheel>", lambda e: widget.yview_scroll(int(-1*(e.delta/120)), "units"))
-            # Windows 下 Shift+滚轮 通常用于横向滚动
-            widget.bind("<Shift-MouseWheel>", lambda e: widget.xview_scroll(int(-1*(e.delta/120)), "units"))
-        
-        # Linux 特有
-        widget.bind("<Button-4>", lambda e: widget.yview_scroll(-1, "units"))
-        widget.bind("<Button-5>", lambda e: widget.yview_scroll(1, "units"))
-
-        # 为了让 bind 生效，必须让 widget 能够接收事件
-        # 鼠标进入时获得焦点，离开时失去焦点，确保滚动不冲突
-        widget.bind("<Enter>", lambda e: widget.focus_set())
+        # 使用统一绑定函数
+        unified_mouse_wheel_bind(self.canvas)
+        # 同时为内部框架也绑定，确保鼠标悬停在按钮上也能滚动
+        unified_mouse_wheel_bind(self.scrollable_window)
 
 class AdvancedWatermarkApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("可视化 PDF 水印工具 v 1.2.3")
+        self.root.title("可视化 PDF 水印工具 v 1.2.4")
         self.root.geometry("1200x900")
         self.root.minsize(800, 600)
         
@@ -350,7 +359,7 @@ class AdvancedWatermarkApp:
         link_lbl.pack(pady=5)
         link_lbl.bind("<Button-1>", self.open_feedback)
         
-        tk.Label(footer_frame, text="v 1.2.3  2026.01.03", font=("Arial", 7), fg="#cccccc").pack()
+        tk.Label(footer_frame, text="v 1.2.4  2026.01.03", font=("Arial", 7), fg="#cccccc").pack()
 
         # 3. 右侧预览区域 (带双向滚动条)
         preview_container = tk.Frame(self.main_paned)
@@ -401,7 +410,7 @@ class AdvancedWatermarkApp:
         self._drag_data = {"x": 0, "y": 0}
         
         # 预览区也支持触控板滚动 (支持垂直和水平)
-        self.bind_mouse_wheel(self.canvas)
+        unified_mouse_wheel_bind(self.canvas)
 
     # --- 逻辑部分 (保持原有逻辑并优化坐标计算) ---
     def update_preview(self, _=None):
@@ -441,12 +450,12 @@ class AdvancedWatermarkApp:
                 wm_scale = wm['scale']
                 wm_w = int(wm['img_obj'].width * wm_scale * self.pt_to_canvas_scale)
                 wm_h = int(wm['img_obj'].height * wm_scale * self.pt_to_canvas_scale)
-                
-                if wm_w > 0 and wm_h > 0:
+            
+            if wm_w > 0 and wm_h > 0:
                     wm_edit = wm['img_obj'].resize((wm_w, wm_h), Image.Resampling.LANCZOS).rotate(wm['angle'], expand=True)
                     alpha = wm['opacity']
-                    r, g, b, a = wm_edit.split()
-                    wm_edit.putalpha(ImageEnhance.Brightness(a).enhance(alpha))
+                r, g, b, a = wm_edit.split()
+                wm_edit.putalpha(ImageEnhance.Brightness(a).enhance(alpha))
                     tk_img = ImageTk.PhotoImage(wm_edit)
                     self.tk_wm_images.append(tk_img) # 保持引用
                     
@@ -554,25 +563,6 @@ class AdvancedWatermarkApp:
             self.current_pdf_idx = new_idx
             self.update_file_info_label()
             self.load_pdf_doc(self.pdf_files[self.current_pdf_idx])
-
-    def bind_mouse_wheel(self, widget):
-        # 针对不同平台优化滚动体验
-        if sys.platform == "darwin": # macOS 触控板/鼠标
-            # 垂直滚动
-            widget.bind("<MouseWheel>", lambda e: widget.yview_scroll(int(-1 * e.delta), "units"))
-            # macOS 特有的水平滚动 (Shift + 滚轮 或 触控板左右滑动)
-            widget.bind("<Shift-MouseWheel>", lambda e: widget.xview_scroll(int(-1 * e.delta), "units"))
-        else: # Windows/Linux
-            widget.bind("<MouseWheel>", lambda e: widget.yview_scroll(int(-1*(e.delta/120)), "units"))
-            # Windows 下 Shift+滚轮 通常用于横向滚动
-            widget.bind("<Shift-MouseWheel>", lambda e: widget.xview_scroll(int(-1*(e.delta/120)), "units"))
-        
-        # Linux 特有
-        widget.bind("<Button-4>", lambda e: widget.yview_scroll(-1, "units"))
-        widget.bind("<Button-5>", lambda e: widget.yview_scroll(1, "units"))
-
-        # 为了让 bind 生效，必须让 widget 能够接收事件
-        widget.bind("<Enter>", lambda e: widget.focus_set())
 
     def load_pdf_doc(self, path):
         if self.current_doc: self.current_doc.close()
@@ -796,13 +786,13 @@ class AdvancedWatermarkApp:
     def set_pos_top_left(self):
         if self.selected_wm_idx >= 0:
             wm = self.watermarks[self.selected_wm_idx]
-            margin = 50
+        margin = 50
             # 计算大致宽度（如果是图片）
             w = wm['img_obj'].width * wm['scale'] if wm['type'] == 'image' else 100
             h = wm['img_obj'].height * wm['scale'] if wm['type'] == 'image' else 30
             wm['x'] = margin + w/2
             wm['y'] = self.vis_pdf_h - margin - h/2
-            self.update_preview()
+        self.update_preview()
 
     def toggle_range_entry(self, e=None):
         self.entry_range.config(state="normal" if self.range_mode_var.get() == "指定页面" else "disabled")
@@ -885,10 +875,10 @@ class AdvancedWatermarkApp:
                 # 使用高质量的双三次插值进行旋转
                 wm_pil = wm_pil.rotate(wa, expand=True, resample=Image.Resampling.BICUBIC)
                 
-                r, g, b, a = wm_pil.split()
-                wm_pil.putalpha(ImageEnhance.Brightness(a).enhance(wo))
+        r, g, b, a = wm_pil.split()
+        wm_pil.putalpha(ImageEnhance.Brightness(a).enhance(wo))
                 
-                img_byte_arr = BytesIO()
+        img_byte_arr = BytesIO()
                 wm_pil.save(img_byte_arr, format='PNG', optimize=True)
                 
                 processed_wms.append({
