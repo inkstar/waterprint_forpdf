@@ -56,7 +56,13 @@ class ScrollableFrame(tk.Frame):
         self.bind_mouse_wheel(canvas)
 
     def bind_mouse_wheel(self, widget):
-        widget.bind_all("<MouseWheel>", lambda e: widget.yview_scroll(int(-1*(e.delta/120)), "units"))
+        # 针对不同平台优化滚动体验
+        if sys.platform == "darwin": # macOS 触控板/鼠标
+            widget.bind_all("<MouseWheel>", lambda e: widget.yview_scroll(int(-1 * e.delta), "units"))
+        else: # Windows/Linux
+            widget.bind_all("<MouseWheel>", lambda e: widget.yview_scroll(int(-1*(e.delta/120)), "units"))
+        
+        # Linux 特有
         widget.bind_all("<Button-4>", lambda e: widget.yview_scroll(-1, "units"))
         widget.bind_all("<Button-5>", lambda e: widget.yview_scroll(1, "units"))
 
@@ -263,7 +269,7 @@ class AdvancedWatermarkApp:
         link_lbl.pack(pady=5)
         link_lbl.bind("<Button-1>", self.open_feedback)
         
-        tk.Label(footer_frame, text="v 1.1.8  2026.01.03", font=("Arial", 7), fg="#cccccc").pack()
+        tk.Label(footer_frame, text="v 1.1.9  2026.01.03", font=("Arial", 7), fg="#cccccc").pack()
 
         # 3. 右侧预览区域 (带双向滚动条)
         preview_container = tk.Frame(self.main_paned)
@@ -273,7 +279,7 @@ class AdvancedWatermarkApp:
         top_bar = tk.Frame(preview_container, height=40, bg="#f8f9fa", pady=5)
         top_bar.pack(side="top", fill="x")
         
-        zoom_frame = self.create_modern_scale(top_bar, "预览缩放:", self.preview_zoom_var, 0.5, 3.0, width=150, command=self.update_preview)
+        zoom_frame = self.create_modern_scale(top_bar, "预览缩放:", self.preview_zoom_var, 0.5, 1.5, width=150, command=self.update_preview)
         zoom_frame.pack(side="left", padx=20)
         zoom_frame.config(bg="#f8f9fa")
         for child in zoom_frame.winfo_children():
