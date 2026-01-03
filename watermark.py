@@ -106,6 +106,38 @@ class AdvancedWatermarkApp:
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
+    def create_modern_scale(self, parent, label_text, var, from_val, to_val, width=200, is_int=False, command=None):
+        frame = tk.Frame(parent)
+        
+        # 顶部标签栏：标题 + 数值显示
+        header = tk.Frame(frame)
+        header.pack(fill="x")
+        tk.Label(header, text=label_text, font=("Arial", 9, "bold")).pack(side="left")
+        
+        val_lbl = tk.Label(header, text="", font=("Arial", 9), fg="#666666")
+        val_lbl.pack(side="right")
+        
+        # 更新数值显示的闭包函数
+        def update_val_label(*args):
+            v = var.get()
+            val_lbl.config(text=str(int(v)) if is_int else f"{v:.2f}")
+            if command:
+                command()
+            else:
+                self.update_wm_from_ui() # 默认实时更新预览
+
+        # 绑定变量变化
+        var.trace_add("write", update_val_label)
+        
+        # ttk 滑块
+        s = ttk.Scale(frame, from_=from_val, to=to_val, variable=var, orient="horizontal", length=width)
+        s.pack(fill="x", pady=(2, 0))
+        
+        # 初始化显示
+        update_val_label()
+        
+        return frame
+
     def setup_ui(self):
         # 1. 主布局：左右分割
         self.main_paned = tk.PanedWindow(self.root, orient="horizontal", sashrelief="raised", sashwidth=4)
@@ -174,12 +206,9 @@ class AdvancedWatermarkApp:
         tk.Button(self.frame_img_edit, text="更换图片", command=self.select_watermark).pack(fill="x")
         
         # 通用属性
-        tk.Label(self.lf_edit, text="水印大小/字号:").pack(anchor="w")
-        tk.Scale(self.lf_edit, from_=0.01, to=3.0, resolution=0.01, orient="horizontal", variable=self.scale_var, command=lambda v: self.update_wm_from_ui()).pack(fill="x")
-        tk.Label(self.lf_edit, text="透明度:").pack(anchor="w")
-        tk.Scale(self.lf_edit, from_=0.1, to=1.0, resolution=0.1, orient="horizontal", variable=self.opacity_var, command=lambda v: self.update_wm_from_ui()).pack(fill="x")
-        tk.Label(self.lf_edit, text="旋转角度:").pack(anchor="w")
-        tk.Scale(self.lf_edit, from_=0, to=360, resolution=5, orient="horizontal", variable=self.angle_var, command=lambda v: self.update_wm_from_ui()).pack(fill="x")
+        self.create_modern_scale(self.lf_edit, "水印大小/字号:", self.scale_var, 0.01, 3.0).pack(fill="x", pady=5)
+        self.create_modern_scale(self.lf_edit, "透明度:", self.opacity_var, 0.1, 1.0).pack(fill="x", pady=5)
+        self.create_modern_scale(self.lf_edit, "旋转角度:", self.angle_var, 0, 360, is_int=True).pack(fill="x", pady=5)
 
         # 位置控制
         lf_pos = tk.LabelFrame(ctrl_frame, text="4. 位置控制", padx=10, pady=5)
@@ -220,7 +249,7 @@ class AdvancedWatermarkApp:
         tk.Label(ctrl_frame, textvariable=self.status_var, wraplength=280, fg="blue").pack(pady=5)
 
         # 页脚
-        tk.Label(ctrl_frame, text="design by 比目鱼\n微信：inkstar97\nv 1.1.4  2026.01.03", font=("Arial", 8), fg="#999999", pady=20).pack()
+        tk.Label(ctrl_frame, text="design by 比目鱼\n微信：inkstar97\nv 1.1.5  2026.01.03", font=("Arial", 8), fg="#999999", pady=20).pack()
 
         # 3. 右侧预览区域 (带双向滚动条)
         preview_container = tk.Frame(self.main_paned)
@@ -229,8 +258,13 @@ class AdvancedWatermarkApp:
         # 预览顶部工具栏
         top_bar = tk.Frame(preview_container, height=40, bg="#f8f9fa", pady=5)
         top_bar.pack(side="top", fill="x")
-        tk.Scale(top_bar, from_=0.5, to=3.0, resolution=0.1, orient="horizontal", length=150, 
-                 variable=self.preview_zoom_var, command=self.update_preview, label="预览缩放").pack(side="left", padx=10)
+        
+        zoom_frame = self.create_modern_scale(top_bar, "预览缩放:", self.preview_zoom_var, 0.5, 3.0, width=150, command=self.update_preview)
+        zoom_frame.pack(side="left", padx=20)
+        zoom_frame.config(bg="#f8f9fa")
+        for child in zoom_frame.winfo_children():
+            try: child.config(bg="#f8f9fa")
+            except: pass
         
         frame_page = tk.Frame(top_bar, bg="#f8f9fa")
         frame_page.pack(side="right", padx=20)
