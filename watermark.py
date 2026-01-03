@@ -58,13 +58,22 @@ class ScrollableFrame(tk.Frame):
     def bind_mouse_wheel(self, widget):
         # 针对不同平台优化滚动体验
         if sys.platform == "darwin": # macOS 触控板/鼠标
-            widget.bind_all("<MouseWheel>", lambda e: widget.yview_scroll(int(-1 * e.delta), "units"))
+            # 垂直滚动
+            widget.bind("<MouseWheel>", lambda e: widget.yview_scroll(int(-1 * e.delta), "units"))
+            # macOS 特有的水平滚动 (Shift + 滚轮 或 触控板左右滑动)
+            widget.bind("<Shift-MouseWheel>", lambda e: widget.xview_scroll(int(-1 * e.delta), "units"))
         else: # Windows/Linux
-            widget.bind_all("<MouseWheel>", lambda e: widget.yview_scroll(int(-1*(e.delta/120)), "units"))
+            widget.bind("<MouseWheel>", lambda e: widget.yview_scroll(int(-1*(e.delta/120)), "units"))
+            # Windows 下 Shift+滚轮 通常用于横向滚动
+            widget.bind("<Shift-MouseWheel>", lambda e: widget.xview_scroll(int(-1*(e.delta/120)), "units"))
         
         # Linux 特有
-        widget.bind_all("<Button-4>", lambda e: widget.yview_scroll(-1, "units"))
-        widget.bind_all("<Button-5>", lambda e: widget.yview_scroll(1, "units"))
+        widget.bind("<Button-4>", lambda e: widget.yview_scroll(-1, "units"))
+        widget.bind("<Button-5>", lambda e: widget.yview_scroll(1, "units"))
+
+        # 为了让 bind 生效，必须让 widget 能够接收事件
+        # 鼠标进入时获得焦点，离开时失去焦点，确保滚动不冲突
+        widget.bind("<Enter>", lambda e: widget.focus_set())
 
 class AdvancedWatermarkApp:
     def __init__(self, root):
@@ -341,7 +350,7 @@ class AdvancedWatermarkApp:
         link_lbl.pack(pady=5)
         link_lbl.bind("<Button-1>", self.open_feedback)
         
-        tk.Label(footer_frame, text="v 1.2.1  2026.01.03", font=("Arial", 7), fg="#cccccc").pack()
+        tk.Label(footer_frame, text="v 1.2.2  2026.01.03", font=("Arial", 7), fg="#cccccc").pack()
 
         # 3. 右侧预览区域 (带双向滚动条)
         preview_container = tk.Frame(self.main_paned)
@@ -390,6 +399,9 @@ class AdvancedWatermarkApp:
         self.canvas.bind("<B1-Motion>", self.on_drag_motion)
         self.canvas.bind("<ButtonRelease-1>", self.on_drag_stop)
         self._drag_data = {"x": 0, "y": 0}
+        
+        # 预览区也支持触控板滚动 (支持垂直和水平)
+        self.bind_mouse_wheel(self.canvas)
 
     # --- 逻辑部分 (保持原有逻辑并优化坐标计算) ---
     def update_preview(self, _=None):
