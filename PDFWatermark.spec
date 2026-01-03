@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('watermark_settings.json', '.')]
+datas = []
 binaries = []
 hiddenimports = []
 tmp_ret = collect_all('fitz')

@@ -25,7 +25,12 @@ def check_imports():
 if not check_imports():
     sys.exit(1)
 
-CONFIG_FILE = "watermark_settings.json"
+# --- 核心配置 ---
+def get_config_path():
+    # 将配置文件存放在用户主目录下，避免在程序目录生成
+    return os.path.join(os.path.expanduser("~"), ".pdf_watermark_settings.json")
+
+CONFIG_FILE = get_config_path()
 
 # --- 通用滚动框架组件 ---
 class ScrollableFrame(tk.Frame):

@@ -27,9 +27,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           
-      - name: Create dummy config
-        run: echo "{}" > watermark_settings.json
-          
       - name: Build with PyInstaller
         run: |
           pyinstaller PDFWatermark.spec
@@ -56,9 +53,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          
-      - name: Create dummy config
-        run: echo "{}" > watermark_settings.json
           
       - name: Build with PyInstaller
         run: |
