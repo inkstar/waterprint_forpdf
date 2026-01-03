@@ -270,20 +270,22 @@ class AdvancedWatermarkApp:
         for i, wm in enumerate(self.watermarks):
             tag = f"wm_{i}"
             if wm['type'] == 'image':
+                # 渲染图片水印
                 wm_scale = wm['scale']
                 wm_w = int(wm['img_obj'].width * wm_scale * self.pt_to_canvas_scale)
                 wm_h = int(wm['img_obj'].height * wm_scale * self.pt_to_canvas_scale)
-            
-            if wm_w > 0 and wm_h > 0:
+                
+                if wm_w > 0 and wm_h > 0:
                     wm_edit = wm['img_obj'].resize((wm_w, wm_h), Image.Resampling.LANCZOS).rotate(wm['angle'], expand=True)
                     alpha = wm['opacity']
-                r, g, b, a = wm_edit.split()
-                wm_edit.putalpha(ImageEnhance.Brightness(a).enhance(alpha))
+                    r, g, b, a = wm_edit.split()
+                    wm_edit.putalpha(ImageEnhance.Brightness(a).enhance(alpha))
                     tk_img = ImageTk.PhotoImage(wm_edit)
-                    self.tk_wm_images.append(tk_img)
+                    self.tk_wm_images.append(tk_img) # 保持引用
                     
                     vx = wm['x'] * self.pt_to_canvas_scale
                     vy = (self.vis_pdf_h - wm['y']) * self.pt_to_canvas_scale
+                    
                     self.canvas.create_image(vx, vy, image=tk_img, tags=("watermark", tag))
             else:
                 vx = wm['x'] * self.pt_to_canvas_scale
@@ -523,13 +525,13 @@ class AdvancedWatermarkApp:
     def set_pos_top_left(self):
         if self.selected_wm_idx >= 0:
             wm = self.watermarks[self.selected_wm_idx]
-        margin = 50
+            margin = 50
             # 计算大致宽度（如果是图片）
             w = wm['img_obj'].width * wm['scale'] if wm['type'] == 'image' else 100
             h = wm['img_obj'].height * wm['scale'] if wm['type'] == 'image' else 30
             wm['x'] = margin + w/2
             wm['y'] = self.vis_pdf_h - margin - h/2
-        self.update_preview()
+            self.update_preview()
 
     def toggle_range_entry(self, e=None):
         self.entry_range.config(state="normal" if self.range_mode_var.get() == "指定页面" else "disabled")
@@ -599,12 +601,12 @@ class AdvancedWatermarkApp:
                 # 图片水印预处理
                 wm_pil = wm['img_obj'].copy()
                 ws, wa, wo = wm['scale'], wm['angle'], wm['opacity']
-        w, h = int(wm_pil.width * ws), int(wm_pil.height * ws)
-        wm_pil = wm_pil.resize((w, h), Image.Resampling.LANCZOS).rotate(wa, expand=True)
-        r, g, b, a = wm_pil.split()
-        wm_pil.putalpha(ImageEnhance.Brightness(a).enhance(wo))
-        img_byte_arr = BytesIO()
-        wm_pil.save(img_byte_arr, format='PNG')
+                w, h = int(wm_pil.width * ws), int(wm_pil.height * ws)
+                wm_pil = wm_pil.resize((w, h), Image.Resampling.LANCZOS).rotate(wa, expand=True)
+                r, g, b, a = wm_pil.split()
+                wm_pil.putalpha(ImageEnhance.Brightness(a).enhance(wo))
+                img_byte_arr = BytesIO()
+                wm_pil.save(img_byte_arr, format='PNG')
                 processed_wms.append({
                     "type": "image",
                     "data": img_byte_arr.getvalue(),
