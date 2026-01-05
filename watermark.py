@@ -5,6 +5,7 @@ import sys
 import json
 import threading
 import webbrowser
+import math
 from io import BytesIO
 from PIL import Image, ImageTk, ImageEnhance
 
@@ -594,7 +595,7 @@ class AdvancedWatermarkApp:
                 self.canvas.create_oval(mid_x-6, y1-26, mid_x+6, y1-14, fill="#28a745", outline="white", tags=("handle", "handle_rotate"))
             
         elif self.active_handle == "move":
-        dx, dy = cx - self._drag_data["x"], cy - self._drag_data["y"]
+            dx, dy = cx - self._drag_data["x"], cy - self._drag_data["y"]
             tag = f"wm_{self.selected_wm_idx}"
             self.canvas.move(tag, dx, dy)
             self.canvas.move("selection_box", dx, dy)
